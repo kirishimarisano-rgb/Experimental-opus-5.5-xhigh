@@ -11,16 +11,20 @@
 
 | 操作 | 作用 |
 |---|---|
+| 右下角按鈕，或數字鍵 `1`–`8` | 切換鏡頭：主畫面、櫻花、車站、上屋、駐輪場、軌道、民家、街道 |
+| `C` | 切到下一個鏡頭 |
 | 拖曳 | 在限制角度內環顧 |
 | `Space` | 暫停或繼續時間（雨、花瓣、平交道號誌） |
 | `H` | 顯示或隱藏標題與提示（右上角提示的最後一行是實際使用的 GPU、幀率與渲染倍率） |
+
+網址後面加 `#` 也可以指定畫質與起始鏡頭，例如 `index.html#ultra`、`index.html#sakura`，或合寫成 `#ultra.sakura`。效果與下表的 `?q=`、`?cam=` 相同；在 claude.ai 上開啟的線上版只能用 `#` 這種寫法。
 
 | URL 參數 | 作用 |
 |---|---|
 | `?q=low` / `med` / `high` / `ultra` | 畫質預設，影響解析度、MSAA、陰影、霧的步數、粒子數。預設為桌機 high、窄螢幕 low；不指定時，即時模式會依幀率自動降低解析度。`ultra` 給效能強的獨立顯示卡：高 DPI 螢幕用原生解析度（最多 2×）、4096 陰影、更細的霧與反射 |
 | `?t=14.2` | 固定時間 |
 | `?shot` | 固定為單幀、關閉攝影機晃動，供截圖使用 |
-| `?cam=station` / `roof` / `houses` / `track` / `sakura` / `street` / `bikes` | 特寫機位，用來檢查建模細節（預設 `main`） |
+| `?cam=station` / `roof` / `houses` / `track` / `sakura` / `street` / `bikes` | 起始鏡頭（預設 `main`），之後仍可用按鈕切換 |
 | `?cam=x,y,z,tx,ty,tz` | 把鏡頭放在任意位置 (x, y, z)，看向 (tx, ty, tz)，焦點自動設在目標點 |
 | `?debug=nofog` / `nofx` / `norays` / `nobloom` / `nodof` / `noao` / `ao` | 逐項關閉效果，或只顯示 SSAO，用於診斷 |
 
@@ -48,7 +52,7 @@
 - macOS：雙 GPU 的 Intel MacBook Pro 會依 `powerPreference` 自動切到獨立顯示卡；也可以在「電池」設定關閉「自動切換圖形卡」。
 - Linux：Mesa 驅動可用 `DRI_PRIME=1 google-chrome`；NVIDIA PRIME 則用 `__NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia google-chrome`。
 
-切到獨立顯示卡後，可以試 `?q=ultra`。
+切到獨立顯示卡後，可以試 `?q=ultra`（或網址後加 `#ultra`）。
 
 ## 需求對照
 

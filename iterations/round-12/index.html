@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>雨宮駅 ── 春雨</title>
+<title>雨宮駅・春雨</title>
 <style>
 	:root { color-scheme: dark; }
 	html, body { margin: 0; height: 100%; background: #0c1117; overflow: hidden; }
@@ -14,9 +14,24 @@
 		font-family: "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", "IPAMincho", serif; }
 	#title .jp { font-size: clamp(18px, 2.2vw, 28px); }
 	#title .sub { margin-top: .6em; font: 11px/1.6 ui-sans-serif, system-ui, sans-serif; letter-spacing: .3em; opacity: .7; }
-	#hint { right: 16px; top: 14px; font: 12px/1.7 ui-sans-serif, system-ui, sans-serif; opacity: .5; text-align: right; }
+	#hint { left: 16px; right: 16px; max-width: calc(100vw - 32px); margin-left: auto; width: max-content; top: 14px; font: 12px/1.7 ui-sans-serif, system-ui, sans-serif; opacity: .72; text-align: right; text-shadow: 0 1px 3px rgba(0, 0, 0, .7), 0 0 12px rgba(0, 0, 0, .45); }
 	#loading { inset: 0; display: grid; place-items: center; background: #0c1117; font: 13px/1 ui-sans-serif, system-ui, sans-serif; letter-spacing: .3em; }
-	.hidden { opacity: 0 !important; }
+	/* camera switcher: quiet chips at the bottom right, beside the title */
+	#cams { right: 16px; bottom: calc(clamp(16px, 5vh, 44px) + env(safe-area-inset-bottom, 0px)); max-width: calc(100vw - 400px);
+		display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; pointer-events: auto; font: 12px/1 ui-sans-serif, system-ui, sans-serif; }
+	#cams button { font: inherit; color: #e9eef4; letter-spacing: .12em; padding: 7px 10px; cursor: pointer; opacity: .7;
+		background: rgba(12, 17, 23, .38); border: 1px solid rgba(233, 238, 244, .18); border-radius: 3px; -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+	#cams button:hover { opacity: 1; }
+	#cams button[aria-pressed="true"] { opacity: 1; background: rgba(233, 238, 244, .16); border-color: rgba(242, 198, 211, .75); }
+	#cams button:focus-visible { outline: 2px solid #f2c6d3; outline-offset: 2px; }
+	#cams kbd { font: inherit; opacity: .5; margin-right: .45em; }
+	#fade { inset: 0; background: #0c1117; opacity: 0; transition: opacity .35s ease; }
+	@media (max-width: 820px) {
+		#cams { left: 16px; max-width: none; justify-content: flex-start; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
+		#title { bottom: calc(112px + env(safe-area-inset-bottom, 0px)); }
+	}
+	@media (prefers-reduced-motion: reduce) { .overlay, #fade { transition: none; } }
+	.hidden { opacity: 0 !important; pointer-events: none !important; }
 </style>
 <script type="importmap">
 {
@@ -30,7 +45,9 @@
 <body>
 <canvas id="c"></canvas>
 <div id="title" class="overlay hidden"><div class="jp">雨宮駅　春雨</div><div class="sub">AMAMIYA STATION · SPRING RAIN</div></div>
-<div id="hint" class="overlay hidden">拖曳：環顧　·　Space：暫停　·　H：隱藏介面<br>畫質：?q=low / med / high / ultra<br><span id="gpu"></span></div>
+<div id="hint" class="overlay hidden">拖曳：環顧　·　1–8 或下方按鈕：切換鏡頭　·　Space：暫停　·　H：隱藏介面<br>畫質：網址後加 #low / #med / #high / #ultra<br><span id="gpu"></span></div>
+<nav id="cams" class="overlay hidden" aria-label="鏡頭"></nav>
+<div id="fade" class="overlay"></div>
 <div id="loading" class="overlay">LOADING</div>
 
 <script type="module">
@@ -54,7 +71,13 @@ const qs = new URLSearchParams( location.search );
 const SHOT = qs.has( 'shot' );                      // deterministic single-frame mode (used for screenshots)
 const FIXED_T = qs.has( 't' ) ? parseFloat( qs.get( 't' ) ) : null;
 const DEBUG = qs.get( 'debug' ) || '';
-const QUALITY = qs.get( 'q' ) || ( matchMedia( '(max-width: 820px)' ).matches ? 'low' : 'high' );
+// The URL hash also carries options, because a page opened as a claude.ai artifact only receives a bare
+// #token (never the query string): #ultra, #sakura, or both as #ultra.sakura
+const HASH = location.hash.slice( 1 ).toLowerCase().split( '.' ).filter( Boolean );
+const hashPick = ( list ) => HASH.find( ( h ) => list.includes( h ) );
+// default: low on phones, high elsewhere (by device, so a narrow window on a desktop still gets high)
+const QUALITY = qs.get( 'q' ) || hashPick( [ 'low', 'med', 'high', 'ultra' ] ) ||
+	( matchMedia( '(pointer: coarse)' ).matches && Math.min( screen.width, screen.height ) < 820 ? 'low' : 'high' );
 const PRESETS = {
 	low: { pr: Math.min( devicePixelRatio, 1 ) * 0.75, msaa: 0, shadow: 1024, fogSteps: 20, lightSamples: 4, rain: 9000, petals: 700, refl: 0.35, ssao: 16 },
 	med: { pr: Math.min( devicePixelRatio, 1 ), msaa: 2, shadow: 1536, fogSteps: 28, lightSamples: 6, rain: 16000, petals: 1100, refl: 0.5, ssao: 24 },
@@ -228,7 +251,7 @@ scene.fog = new THREE.FogExp2( new THREE.Color( 0x5f7383 ), FOG.density );
 const fxScene = new THREE.Scene();                 // particles, composited after fog with soft depth test
 
 const camera = new THREE.PerspectiveCamera( 42, innerWidth / innerHeight, 0.1, 3000 );
-// camera presets: ?cam=main (default) or one of the close-up views used to inspect modelling detail
+// camera presets: switched with the on-screen buttons or keys 1–8; ?cam=name or #name picks the first one
 const CAMS = {
 	main: [ [ 2.35, 1.42, 14.5 ], [ - 0.9, 1.75, - 40 ] ],
 	station: [ [ 1.3, 1.55, 6.2 ], [ 4.7, 1.2, - 2.5 ] ],
@@ -241,11 +264,13 @@ const CAMS = {
 };
 // ?cam=x,y,z,tx,ty,tz places the camera anywhere (inspection)
 const CAM_ARG = ( qs.get( 'cam' ) || '' ).split( ',' ).map( Number );
-const CAM_SEL = CAM_ARG.length === 6 && CAM_ARG.every( Number.isFinite ) ? [ CAM_ARG.slice( 0, 3 ), CAM_ARG.slice( 3 ) ] : CAMS[ qs.get( 'cam' ) ] || CAMS.main;
+const CAM_CUSTOM = CAM_ARG.length === 6 && CAM_ARG.every( Number.isFinite );
+let camName = CAM_CUSTOM ? 'custom' : CAMS[ qs.get( 'cam' ) ] ? qs.get( 'cam' ) : hashPick( Object.keys( CAMS ) ) || 'main';
+const CAM_SEL = CAM_CUSTOM ? [ CAM_ARG.slice( 0, 3 ), CAM_ARG.slice( 3 ) ] : CAMS[ camName ];
 // focus distance per view (m) and lens blur: CoC diameter in pixels of a 1080-line frame at infinity
 const FOCUS = { main: 15, station: 5.5, bikes: 9, roof: 6, houses: 24, track: 14, sakura: 7, street: 16 };
 const DOF_K = 2.0;
-const DOF_U = { uFocus: { value: FOCUS[ qs.get( 'cam' ) ] || ( CAM_ARG.length === 6 ? Math.hypot( CAM_ARG[ 3 ] - CAM_ARG[ 0 ], CAM_ARG[ 4 ] - CAM_ARG[ 1 ], CAM_ARG[ 5 ] - CAM_ARG[ 2 ] ) : FOCUS.main ) }, uCoC: { value: DOF_K }, uMaxCoC: { value: 20 } };
+const DOF_U = { uFocus: { value: CAM_CUSTOM ? Math.hypot( CAM_ARG[ 3 ] - CAM_ARG[ 0 ], CAM_ARG[ 4 ] - CAM_ARG[ 1 ], CAM_ARG[ 5 ] - CAM_ARG[ 2 ] ) : FOCUS[ camName ] }, uCoC: { value: DOF_K }, uMaxCoC: { value: 20 } };
 const CAM_BASE = { pos: new THREE.Vector3( ...CAM_SEL[ 0 ] ), target: new THREE.Vector3( ...CAM_SEL[ 1 ] ) };
 camera.position.copy( CAM_BASE.pos );
 camera.lookAt( CAM_BASE.target );
@@ -4606,10 +4631,59 @@ canvas.addEventListener( 'pointermove', ( e ) => {
 } );
 addEventListener( 'pointerup', () => { look.drag = null; } );
 let paused = false, uiHidden = SHOT;
+const UI_IDS = [ 'title', 'hint', 'cams' ];
+const showUI = ( on ) => UI_IDS.forEach( ( id ) => document.getElementById( id ).classList.toggle( 'hidden', ! on ) );
+
+// camera switching: fade to the night colour, jump, fade back in
+const CAM_ORDER = [ [ 'main', '主畫面' ], [ 'sakura', '櫻花' ], [ 'station', '車站' ], [ 'roof', '上屋' ], [ 'bikes', '駐輪場' ], [ 'track', '軌道' ], [ 'houses', '民家' ], [ 'street', '街道' ] ];
+const fadeEl = document.getElementById( 'fade' );
+const reducedMotion = matchMedia( '(prefers-reduced-motion: reduce)' ).matches;
+const camButtons = CAM_ORDER.map( ( [ name, label ], i ) => {
+
+	const b = document.createElement( 'button' );
+	b.type = 'button'; b.id = `cam-${name}`; b.dataset.cam = name;
+	b.innerHTML = `<kbd>${i + 1}</kbd>${label}`;
+	b.setAttribute( 'aria-pressed', String( ! CAM_CUSTOM && name === camName ) );
+	b.addEventListener( 'click', () => setCam( name ) );
+	document.getElementById( 'cams' ).append( b );
+	return b;
+
+} );
+let camSwitching = false;
+function setCam( name ) {
+
+	if ( ! CAMS[ name ] || camSwitching || name === camName ) return;
+	const apply = () => {
+
+		camName = name;
+		CAM_BASE.pos.set( ...CAMS[ name ][ 0 ] );
+		CAM_BASE.target.set( ...CAMS[ name ][ 1 ] );
+		baseDir.subVectors( CAM_BASE.target, CAM_BASE.pos ).normalize();
+		look.yaw = look.pitch = look.tYaw = look.tPitch = 0;
+		DOF_U.uFocus.value = FOCUS[ name ];
+		camButtons.forEach( ( b ) => b.setAttribute( 'aria-pressed', String( b.dataset.cam === name ) ) );
+
+	};
+	if ( reducedMotion ) { apply(); return; }
+	camSwitching = true;
+	fadeEl.style.opacity = 1;
+	setTimeout( () => { apply(); fadeEl.style.opacity = 0; camSwitching = false; }, 380 );
+
+}
+
 addEventListener( 'keydown', ( e ) => {
 
-	if ( e.code === 'Space' ) paused = ! paused;
-	if ( e.code === 'KeyH' ) { uiHidden = ! uiHidden; document.getElementById( 'title' ).classList.toggle( 'hidden', uiHidden ); document.getElementById( 'hint' ).classList.toggle( 'hidden', uiHidden ); }
+	if ( e.code === 'Space' ) { paused = ! paused; e.preventDefault(); }
+	if ( e.code === 'KeyH' ) { uiHidden = ! uiHidden; showUI( ! uiHidden ); }
+	const n = /^(Digit|Numpad)([1-8])$/.exec( e.code );
+	if ( n ) setCam( CAM_ORDER[ + n[ 2 ] - 1 ][ 0 ] );
+	if ( e.code === 'KeyC' ) setCam( CAM_ORDER[ ( CAM_ORDER.findIndex( ( c ) => c[ 0 ] === camName ) + 1 ) % CAM_ORDER.length ][ 0 ] );
+
+} );
+addEventListener( 'hashchange', () => {
+
+	const name = location.hash.slice( 1 ).toLowerCase().split( '.' ).find( ( h ) => CAMS[ h ] );
+	if ( name ) setCam( name );
 
 } );
 
@@ -4726,7 +4800,7 @@ function frame() {
 	if ( frames === 1 ) {
 
 		document.getElementById( 'loading' ).classList.add( 'hidden' );
-		if ( ! uiHidden ) { document.getElementById( 'title' ).classList.remove( 'hidden' ); document.getElementById( 'hint' ).classList.remove( 'hidden' ); }
+		if ( ! uiHidden ) showUI( true );
 
 	}
 
