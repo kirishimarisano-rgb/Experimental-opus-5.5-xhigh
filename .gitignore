@@ -1,0 +1,4 @@
+tools/node_modules/
+scratch_test/
+iterations/_*.png
+__pycache__/
