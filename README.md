@@ -62,4 +62,4 @@ node shoot.mjs index.html iterations/final-1920x1080.png --w 1920 --h 1080 --t 1
 python3 analyze.py ../iterations/final-1920x1080.png   # 需要 pillow、numpy
 ```
 
-`shoot.mjs` 使用 SwiftShader 軟體 WebGL2，1080p 一張約需 2 分鐘。在實體 GPU 上，場景本身是即時執行的。
+`shoot.mjs` 使用 SwiftShader 軟體 WebGL2，1080p 一張約需 2 分鐘。場景是為實體 GPU 上的即時播放設計的，但本環境只能軟體渲染，實際 GPU 幀率未經實測；若幀率不足，即時模式會自動降低解析度，也可以改用 `?q=med` 或 `?q=low`。
