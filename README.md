@@ -20,6 +20,7 @@
 | `?q=low` / `med` / `high` | 畫質預設，影響解析度、MSAA、陰影、霧的步數、粒子數。預設為桌機 high、窄螢幕 low；不指定時，即時模式會依幀率自動降低解析度 |
 | `?t=14.2` | 固定時間 |
 | `?shot` | 固定為單幀、關閉攝影機晃動，供截圖使用 |
+| `?cam=station` / `roof` / `houses` / `track` | 特寫機位，用來檢查建模細節（預設 `main`） |
 | `?debug=nofog` / `nofx` / `norays` / `nobloom` / `noao` / `ao` | 逐項關閉效果，或只顯示 SSAO，用於診斷 |
 
 ## 需求對照
@@ -30,13 +31,17 @@
 | EffectComposer + UnrealBloomPass | 以 `EffectComposer` 串接自訂 pass。Bloom 的大半徑 mip 染暖色，燈光周圍呈現底片 halation |
 | SSAO | `SSAOPass` 子類別，32 個 kernel、半徑 0.55 m；天空、Alpha 花卡、電線、粒子排除在法線 pass 之外 |
 | 濕地面反射 | 兩個平面鏡射（月台面、地面／道路），用 oblique near-plane 裁切。反射依粗糙度取 mip 並加上垂直拉長取樣，再乘上 Fresnel。水窪遮罩、雙層雨滴漣漪法線、屋簷下較乾 |
-| 體積霧 | ① 覆寫所有材質的 fog chunk，改為指數高度霧並依太陽方向染色，主畫面、鏡射、粒子共用同一套大氣。② raymarch 體積霧 pass：3D 噪聲霧團、向下捲動的雨幕，14 盞燈以 HG 相函數散射。③ 螢幕空間光芒 |
+| 體積霧 | ① 覆寫所有材質的 fog chunk，改為指數高度霧並依太陽方向染色，主畫面、鏡射、粒子共用同一套大氣。② 體積霧 pass：3D 噪聲霧團與向下捲動的雨幕以 raymarch 計算；14 盞燈的散射對每盞燈做 equi-angular sampling，以 HG 相函數計算。③ 螢幕空間光芒 |
 | 雨滴與櫻花粒子 | 約 2.6 萬條 instanced 雨絲、屋簷滴水、濺水花冠、近鏡頭失焦雨；三組旋轉翻滾的花瓣（Points）；約 5200 片依水窪分佈的落花。粒子都與場景深度做軟遮擋，並被燈光照亮 |
 | 軟陰影 | `PCFShadowMap` 搭配 `shadow.radius`。r186 已移除 `PCFSoftShadowMap`，PCF 本身改用 Vogel disk 軟取樣。投影光源為方向光與 3 盞 SpotLight |
 
+## 建模
+
+全部程序化生成、沒有外部模型：H 型鋼上屋與波浪浪板屋頂、立體販賣機與回收箱、條板長椅、時鐘與時刻表、倒角枕木與扣件、瓦屋頂民家（窗框、雨戶、陽台、空調、天線、空心磚圍牆）、有礙子與變壓器的電線桿、カーブミラー、多層杉林、葉叢灌木與草叢。場景約 111 萬個三角形；靜態物件依材質合併，重複物件用 instancing。
+
 ## 迭代過程
 
-共五輪，每輪都有 Playwright 截圖、自我檢查（電影感光影、大氣透視、色彩層次）、量化數據與修改說明：
+共八輪（1–5 輪光影與構圖，6–8 輪建模精細化），每輪都有 Playwright 截圖、自我檢查（電影感光影、大氣透視、色彩層次）、量化數據與修改說明：
 **[`iterations/README.md`](iterations/README.md)**
 
 ## 目錄
@@ -45,7 +50,8 @@
 index.html                 最終場景（單一檔案）
 iterations/
   README.md                每輪截圖、問題、修改說明與數據
-  contact-sheet.jpg        五輪對照
+  contact-sheet.jpg        八輪對照
+  modelling-closeups.jpg   建模特寫：Round 5 對 Round 8
   final-1920x1080.png      最終 1080p 截圖
   round-N/index.html       第 N 輪的 HTML 快照
   round-N/round-N.png      第 N 輪截圖（1600×900，t = 14.2）
