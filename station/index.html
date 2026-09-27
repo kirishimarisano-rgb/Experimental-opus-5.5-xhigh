@@ -261,9 +261,15 @@ layout(std140) uniform Frame {
 #define PR 6360.0
 #define PA 6445.0
 const vec3 BETA_R = vec3(5.8e-3, 13.5e-3, 33.1e-3) * 0.85;
-const vec3 BETA_M = vec3(5e-3);
+#ifndef MIE_K
+#define MIE_K 1.0
+#endif
+const vec3 BETA_M = vec3(5e-3) * MIE_K;
 const float H_R = 8.0, H_M = 1.2, G_M = 0.76;
 const vec3 PAXIS = normalize(vec3(0.25, 1.0, -0.15));
+#ifndef CLOUDS
+#define CLOUDS 1.0
+#endif
 
 float hash13(vec3 p) { p = fract(p * .1031); p += dot(p, p.zyx + 31.32); return fract((p.x + p.y) * p.z); }
 vec3 hash33(vec3 p) { p = fract(p * vec3(.1031, .1030, .0973)); p += dot(p, p.yxz + 33.33); return fract((p.xxy + p.yxx) * p.zyx); }
@@ -319,7 +325,7 @@ function compile(type, src, name) {
 /** Program with the Frame UBO bound at point 0 and all uniform locations cached. */
 function program(name, vs, fs, defines = '') {
   const p = gl.createProgram();
-  const head = GLSL_HEAD + defines + '\n';
+  const head = GLSL_HEAD.replace('#version 300 es\n', '#version 300 es\n' + defines + '\n');
   gl.attachShader(p, compile(gl.VERTEX_SHADER, head + vs, name + '.vs'));
   gl.attachShader(p, compile(gl.FRAGMENT_SHADER, head + fs, name + '.fs'));
   gl.linkProgram(p);
@@ -669,8 +675,8 @@ vec3 planetSurface(vec3 n, vec3 V, vec3 L, vec3 Ts) {
   float depth = clamp((SEA - h) * 4.0, 0.0, 1.0);
   vec3 ocol = mix(vec3(0.016, 0.070, 0.080), vec3(0.003, 0.016, 0.036), smoothstep(0.0, 0.6, depth));
   vec3 alb = mix(ocol, lcol, land);
-  float ice = smoothstep(0.82, 0.90, abs(lat) + 0.05 * fbm(q * 9.0, 3) + 0.05 * elev * land);
-  alb = mix(alb, vec3(0.70, 0.76, 0.82), ice);
+  float ice = smoothstep(0.915, 0.935, abs(lat) + 0.04 * fbm(q * 11.0, 4) + 0.03 * elev * land);
+  alb = mix(alb, vec3(0.66, 0.72, 0.80) * (0.85 + 0.15 * (fbm(q * 40.0, 3) * 0.5 + 0.5)), ice);
 
   // clouds: zonal-stretched, strongly warped fbm, one cyclone
   vec3 cq = rotAxis(n, PAXIS, uLoad.w);
@@ -681,7 +687,7 @@ vec3 planetSurface(vec3 n, vec3 V, vec3 L, vec3 Ts) {
   vec3 cw = vec3(fbm(cz * 2.2 + 21.0, 5), fbm(cz * 2.2 + 33.0, 5), fbm(cz * 2.2 + 47.0, 5));
   float cl = fbm(cz * 3.2 + cw * 1.8, oct - 1) * 0.5 + 0.5;
   float belt = 0.5 + 0.5 * cos(lat * 12.0);
-  float cover = smoothstep(0.57 - 0.05 * belt, 0.78, cl + 0.06 * exp(-dc * 5.0));
+  float cover = smoothstep(0.57 - 0.05 * belt, 0.78, cl + 0.06 * exp(-dc * 5.0)) * uQual.x * 0.0 + smoothstep(0.57 - 0.05 * belt, 0.78, cl + 0.06 * exp(-dc * 5.0)) * CLOUDS;
   cover *= smoothstep(0.25, 0.65, fbm(cz * 14.0 + cw, 4) * 0.5 + 0.5 + 0.25);
 
   float ndl = dot(n, L);
@@ -753,9 +759,1333 @@ void main() {
   o = vec4(col, 1.0);
 }`;
 let bgProg;
+const BG_VS = `
+out vec2 vUV;
+void main() {
+  vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
+  vUV = p;
+  gl_Position = vec4(p * 2.0 - 1.0, 1.0, 1.0);
+}`;
 
 // =====================================================================
-//  6. Final composite (tone mapping). Bloom and grading arrive in M5.
+//  6. Geometry kit: mesh builder, prototypes, instancing
+// =====================================================================
+const MAT = {
+  HULL: 0, TRUSS: 1, GUIDE: 2, MLI: 3, WAFER: 4, FIN: 5, GLASS: 6, HAB: 7, STRIPE: 8,
+  CONTAINER: 9, TRAIN: 10, DISH: 11, EMIS: 12, COREGLOW: 13, DARK: 14, SOLAR: 15,
+  RING: 16, SIGN: 17, FIBER: 18, RAIL: 19, PLATFORM: 20,
+};
+// line index: 0 cargo, 1 passenger, 2 data, 3 comms
+const LINE_HEX = ['#FFA41B', '#36C9FF', '#A070FF', '#3DF2A0'];
+const hexLin = (h) => [1, 3, 5].map((i) => Math.pow(parseInt(h.substr(i, 2), 16) / 255, 2.2));
+const LINE_LIN = LINE_HEX.map(hexLin);
+
+const VSTRIDE = 10; // pos3 nrm3 attr4 (material, u, v, extra)
+class MeshBuilder {
+  constructor() { this.v = []; this.idx = []; this.n = 0; }
+  vert(p, nr, m, u = 0, w = 0, e = 0) {
+    this.v.push(p[0], p[1], p[2], nr[0], nr[1], nr[2], m, u, w, e);
+    return this.n++;
+  }
+  tri(a, b, c) { this.idx.push(a, b, c); }
+  quad(a, b, c, d) { this.idx.push(a, b, c, a, c, d); }
+  /** Box centred at c with half sizes hs along the orthonormal basis X,Y,Z. u/v are face coords in metres. */
+  box(c, hs, X, Y, Z, m, e = 0) {
+    const ax = [X, Y, Z];
+    for (let f = 0; f < 6; f++) {
+      const k = f >> 1, s = (f & 1) ? -1 : 1;
+      const n = v3.mul(ax[k], s);
+      const a1 = ax[(k + 1) % 3], a2 = ax[(k + 2) % 3];
+      const h0 = hs[k], h1 = hs[(k + 1) % 3], h2 = hs[(k + 2) % 3];
+      const base = v3.add(c, v3.mul(n, h0));
+      const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
+      const ids = corners.map(([p, q]) => this.vert(v3.add(base, v3.add(v3.mul(a1, p * h1), v3.mul(a2, q * h2))), n, m, p * h1, q * h2, e));
+      if (s > 0) this.quad(ids[0], ids[1], ids[2], ids[3]); else this.quad(ids[0], ids[3], ids[2], ids[1]);
+    }
+  }
+  /** Sweep a closed/open polygon profile (points [x along B, y along N]) with flat facets along frames. */
+  sweepFlat(frames, prof, m, e = 0, closed = true, uScale = 1) {
+    const segs = closed ? prof.length : prof.length - 1;
+    for (let s = 0; s < segs; s++) {
+      const a = prof[s], b = prof[(s + 1) % prof.length];
+      const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1;
+      const n2 = [dy / l, -dx / l]; // outward for counter-clockwise profiles (x right, y up)
+      let prev = null;
+      for (let i = 0; i < frames.length; i++) {
+        const F = frames[i];
+        const nrm = v3.add(v3.mul(F.B, n2[0]), v3.mul(F.N, n2[1]));
+        const pa = v3.add(F.p, v3.add(v3.mul(F.B, a[0]), v3.mul(F.N, a[1])));
+        const pb = v3.add(F.p, v3.add(v3.mul(F.B, b[0]), v3.mul(F.N, b[1])));
+        const ia = this.vert(pa, nrm, m, F.s * uScale, 0, e), ib = this.vert(pb, nrm, m, F.s * uScale, l, e);
+        if (prev) this.quad(prev[0], ia, ib, prev[1]);
+        prev = [ia, ib];
+      }
+    }
+  }
+  /** Round tube along frames. */
+  sweepTube(frames, r, seg, m, e = 0) {
+    let prev = null;
+    for (let i = 0; i < frames.length; i++) {
+      const F = frames[i], ring = [];
+      for (let k = 0; k <= seg; k++) {
+        const a = k / seg * Math.PI * 2;
+        const n = v3.add(v3.mul(F.B, Math.cos(a)), v3.mul(F.N, Math.sin(a)));
+        ring.push(this.vert(v3.madd(F.p, n, r), n, m, F.s, k / seg, e));
+      }
+      if (prev) for (let k = 0; k < seg; k++) this.quad(prev[k], prev[k + 1], ring[k + 1], ring[k]);
+      prev = ring;
+    }
+  }
+  /** Surface of revolution around axis Y through c; prof = [[r, y], ...]; smooth normals. */
+  lathe(c, prof, seg, m, e = 0, a0 = 0, a1 = Math.PI * 2) {
+    const rows = [];
+    for (let i = 0; i < prof.length; i++) {
+      const [r, y] = prof[i];
+      const pp = prof[Math.max(0, i - 1)], pn = prof[Math.min(prof.length - 1, i + 1)];
+      const dr = pn[0] - pp[0], dy = pn[1] - pp[1], l = Math.hypot(dr, dy) || 1;
+      const nr = dy / l, ny = -dr / l;
+      const row = [];
+      for (let k = 0; k <= seg; k++) {
+        const a = a0 + (a1 - a0) * k / seg, ca = Math.cos(a), sa = Math.sin(a);
+        row.push(this.vert([c[0] + r * ca, c[1] + y, c[2] + r * sa], [nr * ca, ny, nr * sa], m, a * r, y, e));
+      }
+      rows.push(row);
+    }
+    for (let i = 0; i + 1 < rows.length; i++) for (let k = 0; k < seg; k++) this.quad(rows[i][k], rows[i][k + 1], rows[i + 1][k + 1], rows[i + 1][k]);
+  }
+  /** Flat-shaded prism: regular n-gon (circumradius r) extruded along Y from y0 to y1, centred at c. */
+  prismY(c, r, n, y0, y1, m, e = 0, rot = 0, rTop = r) {
+    const P = (k, y, rr) => { const a = rot + k / n * Math.PI * 2; return [c[0] + rr * Math.cos(a), c[1] + y, c[2] + rr * Math.sin(a)]; };
+    for (let k = 0; k < n; k++) {
+      const a = rot + (k + 0.5) / n * Math.PI * 2, slope = (r - rTop) / (y1 - y0);
+      const nr = v3.norm([Math.cos(a), slope, Math.sin(a)]);
+      const w = 2 * r * Math.sin(Math.PI / n);
+      const i0 = this.vert(P(k, y0, r), nr, m, 0, y0, e), i1 = this.vert(P(k + 1, y0, r), nr, m, w, y0, e);
+      const i2 = this.vert(P(k + 1, y1, rTop), nr, m, w, y1, e), i3 = this.vert(P(k, y1, rTop), nr, m, 0, y1, e);
+      this.quad(i0, i3, i2, i1);
+    }
+    for (const [y, rr, s] of [[y1, rTop, 1], [y0, r, -1]]) {
+      const cId = this.vert([c[0], c[1] + y, c[2]], [0, s, 0], m, 0, 0, e);
+      const ring = [];
+      for (let k = 0; k <= n; k++) { const p = P(k, y, rr); ring.push(this.vert(p, [0, s, 0], m, p[0] - c[0], p[2] - c[2], e)); }
+      for (let k = 0; k < n; k++) if (s > 0) this.tri(cId, ring[k + 1], ring[k]); else this.tri(cId, ring[k], ring[k + 1]);
+    }
+  }
+  /** One quad (two triangles) with explicit corners, normal and uv. */
+  panel(p0, p1, p2, p3, n, m, uv = [[0, 0], [1, 0], [1, 1], [0, 1]], e = 0) {
+    const ids = [p0, p1, p2, p3].map((p, i) => this.vert(p, n, m, uv[i][0], uv[i][1], e));
+    this.quad(ids[0], ids[1], ids[2], ids[3]);
+  }
+  upload() {
+    const vao = gl.createVertexArray();
+    gl.bindVertexArray(vao);
+    const vb = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, vb);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.v), gl.STATIC_DRAW);
+    const S = VSTRIDE * 4;
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, S, 0);
+    gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, S, 12);
+    gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 4, gl.FLOAT, false, S, 24);
+    const ib = gl.createBuffer();
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(this.idx), gl.STATIC_DRAW);
+    gl.bindVertexArray(null);
+    return { vao, vb, ib, count: this.idx.length, verts: this.n };
+  }
+}
+
+/** Instance list: per instance a mat4 (basis columns scaled, position) and a vec4 param. */
+class Instances {
+  constructor() { this.d = []; this.n = 0; }
+  add(pos, X, Y, Z, sx, sy, sz, param = [0, 0, 0, 0]) {
+    this.d.push(X[0] * sx, X[1] * sx, X[2] * sx, 0, Y[0] * sy, Y[1] * sy, Y[2] * sy, 0, Z[0] * sz, Z[1] * sz, Z[2] * sz, 0, pos[0], pos[1], pos[2], 1, param[0], param[1], param[2], param[3]);
+    return this.n++;
+  }
+  /** Unit-box beam between a and b with cross-section w (along side) x h (along up). */
+  beam(a, b, w, h, up = [0, 1, 0], param) {
+    const d = v3.sub(b, a), L = v3.len(d);
+    if (L < 1e-3) return -1;
+    const X = v3.mul(d, 1 / L);
+    let Z = v3.cross(X, up);
+    if (v3.len(Z) < 1e-3) Z = v3.cross(X, [1, 0, 0]);
+    Z = v3.norm(Z);
+    const Y = v3.cross(Z, X);
+    return this.add(v3.lerp(a, b, 0.5), X, Y, Z, L, h, w, param);
+  }
+}
+/** Binds a prototype mesh with an instance buffer (locations 3..7). */
+function instanced(proto, inst, dynamic = false) {
+  const vao = gl.createVertexArray();
+  gl.bindVertexArray(vao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, proto.vb);
+  const S = VSTRIDE * 4;
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, S, 0);
+  gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, S, 12);
+  gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 4, gl.FLOAT, false, S, 24);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, proto.ib);
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  const data = new Float32Array(inst.d);
+  gl.bufferData(gl.ARRAY_BUFFER, data, dynamic ? gl.DYNAMIC_DRAW : gl.STATIC_DRAW);
+  for (let i = 0; i < 5; i++) {
+    gl.enableVertexAttribArray(3 + i);
+    gl.vertexAttribPointer(3 + i, 4, gl.FLOAT, false, 80, i * 16);
+    gl.vertexAttribDivisor(3 + i, 1);
+  }
+  gl.bindVertexArray(null);
+  return { vao, count: proto.count, instances: inst.n, buf, data, protoVerts: proto.verts };
+}
+
+// ---------------------------------------------------------------------
+//  Paths in the XZ plane (tracks are level): lines, arcs, heading-aware turns
+// ---------------------------------------------------------------------
+const rot90 = (h) => [-h[1], h[0]];
+const cross2 = (a, b) => a[0] * b[1] - a[1] * b[0];
+class Path {
+  constructor(y, x, z, hx, hz) { this.y = y; this.pts = [[x, z]]; this.h = v3.norm([hx, 0, hz]); this.h = [this.h[0], this.h[2]]; }
+  get cur() { return this.pts[this.pts.length - 1]; }
+  line(x, z, step = 2) {
+    const [x0, z0] = this.cur, L = Math.hypot(x - x0, z - z0);
+    if (L < 1e-6) return this;
+    const n = Math.max(1, Math.ceil(L / step));
+    for (let i = 1; i <= n; i++) this.pts.push([x0 + (x - x0) * i / n, z0 + (z - z0) * i / n]);
+    this.h = [(x - x0) / L, (z - z0) / L];
+    return this;
+  }
+  /** Arc around centre c to point e, turning in the sense given by the current heading. */
+  arc(c, e, step = 2) {
+    const s = this.cur, r = Math.hypot(s[0] - c[0], s[1] - c[1]);
+    const sense = Math.sign(cross2([s[0] - c[0], s[1] - c[1]], this.h)) || 1;
+    const t0 = Math.atan2(s[1] - c[1], s[0] - c[0]), t1 = Math.atan2(e[1] - c[1], e[0] - c[0]);
+    let sw = sense > 0 ? (t1 - t0) : (t0 - t1);
+    sw = ((sw % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+    if (sw < 1e-6) sw = 2 * Math.PI;
+    sw *= sense;
+    const n = Math.max(2, Math.ceil(Math.abs(sw) * r / step));
+    for (let i = 1; i <= n; i++) { const t = t0 + sw * i / n; this.pts.push([c[0] + r * Math.cos(t), c[1] + r * Math.sin(t)]); }
+    const t = t0 + sw;
+    this.h = [-Math.sin(t) * sense, Math.cos(t) * sense];
+    return this;
+  }
+  /** Turn from the current heading to heading h1 with radius r. */
+  turn(h1, r, step = 2) {
+    h1 = [h1[0] / Math.hypot(h1[0], h1[1]), h1[1] / Math.hypot(h1[0], h1[1])];
+    let n0 = rot90(this.h), n1 = rot90(h1);
+    if (n0[0] * h1[0] + n0[1] * h1[1] < 0) { n0 = [-n0[0], -n0[1]]; n1 = [-n1[0], -n1[1]]; }
+    const s = this.cur, c = [s[0] + n0[0] * r, s[1] + n0[1] * r];
+    return this.arc(c, [c[0] - n1[0] * r, c[1] - n1[1] * r], step);
+  }
+  /** Samples as 3D points with frames (T tangent, N up, B right) and arc length s. */
+  frames(yOff = 0) {
+    const P = this.pts, out = [];
+    let s = 0;
+    for (let i = 0; i < P.length; i++) {
+      if (i > 0) s += Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1]);
+      const a = P[Math.max(0, i - 1)], b = P[Math.min(P.length - 1, i + 1)];
+      const T = v3.norm([b[0] - a[0], 0, b[1] - a[1]]);
+      out.push({ p: [P[i][0], this.y + yOff, P[i][1]], T, N: [0, 1, 0], B: [-T[2], 0, T[0]], s });
+    }
+    return out;
+  }
+}
+/** Re-samples a list of frames every `step` metres (for trusses, lights, supports). */
+function every(frames, step, offset = 0) {
+  const out = [];
+  let next = offset, j = 0;
+  const total = frames[frames.length - 1].s;
+  while (next <= total && j < frames.length - 1) {
+    while (j < frames.length - 2 && frames[j + 1].s < next) j++;
+    const a = frames[j], b = frames[j + 1], t = clamp((next - a.s) / Math.max(1e-6, b.s - a.s), 0, 1);
+    out.push({ p: v3.lerp(a.p, b.p, t), T: v3.norm(v3.lerp(a.T, b.T, t)), N: [0, 1, 0], B: v3.norm(v3.lerp(a.B, b.B, t)), s: next });
+    next += step;
+  }
+  return out;
+}
+/** Offsets a frame list sideways (along B) to make a parallel rail. */
+const offsetFrames = (fr, o, dy = 0) => fr.map((F) => ({ ...F, p: [F.p[0] + F.B[0] * o, F.p[1] + dy, F.p[2] + F.B[2] * o] }));
+
+// =====================================================================
+//  7. Materials and the uber shader (one program draws every solid)
+// =====================================================================
+const SOLID_VS = `
+layout(location=0) in vec3 aPos;
+layout(location=1) in vec3 aNrm;
+layout(location=2) in vec4 aAttr;
+layout(location=3) in vec4 iM0;
+layout(location=4) in vec4 iM1;
+layout(location=5) in vec4 iM2;
+layout(location=6) in vec4 iM3;
+layout(location=7) in vec4 iParam;
+out vec3 vWP; out vec3 vN; out vec3 vLP; out vec3 vLN; out vec4 vAttr; out vec4 vParam;
+#ifdef SHADOW
+uniform mat4 uLightVP;
+#endif
+void main() {
+  mat4 M = mat4(iM0, iM1, iM2, iM3);
+  vec3 s2 = vec3(dot(iM0.xyz, iM0.xyz), dot(iM1.xyz, iM1.xyz), dot(iM2.xyz, iM2.xyz));
+  vec4 wp = M * vec4(aPos, 1.0);
+  vWP = wp.xyz;
+  vN = mat3(M) * (aNrm / s2);
+  vLP = aPos * sqrt(s2);
+  vLN = aNrm;
+  vAttr = aAttr; vParam = iParam;
+#ifdef SHADOW
+  gl_Position = uLightVP * wp;
+#else
+  gl_Position = uViewProj * wp;
+#endif
+}`;
+const SHADOW_FS = `out vec4 o; void main() { o = vec4(1.0); }`;
+
+const SOLID_FS = `
+in vec3 vWP; in vec3 vN; in vec3 vLP; in vec3 vLN; in vec4 vAttr; in vec4 vParam;
+out vec4 o;
+uniform samplerCube uEnv;
+uniform samplerCube uIrr;
+uniform highp sampler2DShadow uShadow;
+uniform sampler2D uSigns;
+uniform mat4 uLightVP;
+uniform vec2 uShadowTexel;
+uniform vec3 uLine[4];
+uniform float uGate[12];        // ring flash per gate (4) x ring (3)
+uniform vec4 uHeat;             // rgb fin light, w fin emissive scale
+uniform vec4 uDyn;              // x core pulse, y terminal glow, z beam charge, w unused
+
+float hash12(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * .1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+
+struct Mat { vec3 albedo; float rough; float metal; vec3 emis; float ao; vec3 nOff; };
+
+// box-projected coordinates in metres on the dominant local face
+vec2 faceUV(vec3 lp, vec3 ln) {
+  vec3 a = abs(ln);
+  if (a.x > a.y && a.x > a.z) return lp.zy;
+  if (a.y > a.z) return lp.xz;
+  return lp.xy;
+}
+// panel grid: x = seam mask (1 = panel, 0 = seam), y = panel hash
+vec2 panels(vec2 uv, vec2 size, float seamW) {
+  vec2 g = uv / size;
+  g.x += step(1.0, mod(floor(g.y), 2.0)) * 0.5;
+  vec2 id = floor(g), f = fract(g);
+  vec2 e = min(f, 1.0 - f) * size;
+  float d = min(e.x, e.y);
+  float fw = max(fwidth(uv.x), fwidth(uv.y));
+  float seam = smoothstep(seamW - fw, seamW + fw, d);
+  seam = mix(seam, 0.93, smoothstep(seamW * 0.6, seamW * 2.5, fw)); // fade out when sub-pixel
+  return vec2(seam, hash12(id));
+}
+vec3 blackbody(float T) {
+  float g = 0.52 * smoothstep(520.0, 2300.0, T) + 0.03;
+  float b = 0.24 * smoothstep(1100.0, 2600.0, T);
+  return vec3(1.0, g, b);
+}
+
+Mat material(int id, float e) {
+  Mat m; m.albedo = vec3(0.5); m.rough = 0.5; m.metal = 0.0; m.emis = vec3(0.0); m.ao = 1.0; m.nOff = vec3(0.0);
+  vec3 lp = vLP, ln = vLN;
+  vec2 uv = faceUV(lp, ln);
+  if (id == 0 || id == 7) {                       // HULL / HAB: white ceramic panels
+    vec2 pn = panels(uv, vec2(3.2, 2.1), 0.05);
+    float v = 0.86 + 0.14 * pn.y;
+    m.albedo = vec3(0.60, 0.585, 0.55) * v * (0.72 + 0.28 * pn.x);
+    m.rough = 0.55 + 0.15 * pn.y;
+    if (pn.y > 0.93) m.albedo *= vec3(0.55, 0.56, 0.6);            // service hatches
+    if (id == 7) {                                 // habitat windows along both sides of the cylinder
+      float rad = length(lp.yz), ang = atan(lp.z, lp.y);
+      float side = abs(abs(ang) - 1.5708) * rad;
+      vec2 cell = floor(vec2(lp.x / 2.4, ang * rad / 1.9));
+      vec2 f = fract(vec2(lp.x / 2.4, ang * rad / 1.9));
+      float win = step(0.22, f.x) * step(f.x, 0.78) * step(0.2, f.y) * step(f.y, 0.8) * step(side, 1.5) * step(0.7, rad);
+      float lit = step(0.3, hash12(cell + vParam.xy * 17.0));
+      m.emis += vec3(1.0, 0.80, 0.56) * win * lit * (1.0 + 1.4 * hash12(cell + 3.1));
+      m.albedo *= 1.0 - 0.75 * win;
+    }
+  } else if (id == 1) {                            // TRUSS: gunmetal
+    m.albedo = vec3(0.30, 0.31, 0.33); m.metal = 0.75; m.rough = 0.42;
+  } else if (id == 2) {                            // GUIDE: graphite guideway
+    vec2 pn = panels(vec2(vAttr.y, vAttr.z), vec2(12.0, 1.8), 0.06);
+    m.albedo = vec3(0.062, 0.066, 0.075) * (0.8 + 0.3 * pn.y) * (0.75 + 0.25 * pn.x);
+    m.rough = 0.45; m.metal = 0.25;
+  } else if (id == 3) {                            // MLI gold foil
+    float cr = gnoise(lp * 1.7) * 0.6 + gnoise(lp * 5.3) * 0.3;
+    m.albedo = vec3(0.86, 0.62, 0.26) * (0.85 + 0.15 * cr); m.metal = 1.0; m.rough = 0.28 + 0.12 * abs(cr);
+    m.nOff = vec3(gnoise(lp * 2.1 + 3.0), gnoise(lp * 2.1 + 7.0), gnoise(lp * 2.1 + 11.0)) * 0.25;
+  } else if (id == 4) {                            // WAFER: dark ceramic with gold contacts on the rim
+    m.albedo = vec3(0.045, 0.047, 0.055); m.rough = 0.35; m.metal = 0.3;
+    if (abs(ln.y) < 0.5) {
+      vec2 c = fract(vec2(vAttr.y / 1.6, (vAttr.z + 100.0) / 1.25));
+      float pad = step(0.3, c.x) * step(c.x, 0.7) * step(0.25, c.y) * step(c.y, 0.75);
+      m.albedo = mix(m.albedo, vec3(0.9, 0.66, 0.3), pad); m.metal = mix(m.metal, 1.0, pad); m.rough = mix(m.rough, 0.25, pad);
+    }
+  } else if (id == 5) {                            // FIN: radiator, black-body glow from the root
+    float u = vAttr.y, h = vAttr.z;
+    float pipes = smoothstep(0.35, 0.0, abs(fract(h * 7.0) - 0.5) - 0.12);
+    m.albedo = vec3(0.045, 0.045, 0.05); m.rough = 0.7; m.metal = 0.1;
+    float T = uLoad.y * (1.0 - 0.42 * u) * (0.94 + 0.06 * pipes) * (1.0 - 0.05 * abs(h - 0.5));
+    float I = 0.05 * pow(T / 650.0, 5.2) * uHeat.w * (vParam.x > 0.0 ? vParam.x : 1.0);
+    float edge = smoothstep(0.0, 0.08, u) * (1.0 - 0.3 * smoothstep(0.85, 1.0, u));
+    m.emis = blackbody(T) * I * edge * (0.85 + 0.3 * pipes);
+  } else if (id == 6) {                            // GLASS: dark glazing with warm interior
+    m.albedo = vec3(0.02, 0.025, 0.03); m.rough = 0.08; m.metal = 0.9;
+    vec2 f = fract(vec2(vAttr.y / 4.0, vAttr.z / 3.2));
+    float mull = step(0.06, f.x) * step(f.y, 0.94);
+    float hh = hash12(floor(vec2(vAttr.y / 4.0, vAttr.z / 3.2)) + e);
+    m.emis = vec3(1.0, 0.78, 0.52) * mull * (0.5 + 0.9 * hh) * (0.9 + uDyn.y);
+  } else if (id == 8) {                            // STRIPE: route-map line colour
+    int li = int(e + 0.5);
+    m.albedo = vec3(0.05); m.rough = 0.3;
+    float flow = 0.85 + 0.15 * sin(vAttr.y * 0.05 - uCam.w * 3.0);
+    m.emis = uLine[li] * 3.0 * flow;
+  } else if (id == 9) {                            // CONTAINER: tinted, corrugated, with marking band
+    vec3 tint = vParam.rgb;
+    float corr = 0.9 + 0.1 * sin(uv.x * 9.0);
+    m.albedo = tint * corr; m.rough = 0.6; m.metal = 0.15;
+    float band = step(abs(lp.y - 0.4), 0.18) * step(0.5, vParam.w);
+    m.albedo = mix(m.albedo, vec3(0.62, 0.6, 0.55), band);
+  } else if (id == 10) {                           // TRAIN hull (colour/lines in M3)
+    vec2 pn = panels(uv, vec2(4.0, 1.6), 0.03);
+    m.albedo = vec3(0.66, 0.66, 0.64) * (0.9 + 0.1 * pn.y) * (0.8 + 0.2 * pn.x); m.rough = 0.35;
+  } else if (id == 11) {                           // DISH: white composite
+    m.albedo = vec3(0.62, 0.62, 0.6); m.rough = 0.4;
+    float rings = smoothstep(0.02, 0.0, abs(fract(vAttr.z / 6.0) - 0.5) - 0.47);
+    m.albedo *= 1.0 - 0.3 * rings;
+  } else if (id == 12) {                           // EMIS: plain light colour from the instance
+    m.albedo = vec3(0.02); m.emis = vParam.rgb * vParam.w;
+  } else if (id == 13) {                           // COREGLOW: stacked compute light seen between wafers
+    float y = vWP.y;
+    float bands = 0.5 + 0.5 * sin(y * 0.9 - uLoad.z * 4.0);
+    float fine = 0.5 + 0.5 * sin(atan(vWP.z, vWP.x) * 24.0 + y * 0.3 + uLoad.z);
+    float I = (0.8 + 2.2 * uLoad.x) * (0.55 + 0.45 * bands) * (0.8 + 0.2 * fine) + uDyn.x * 2.5;
+    m.albedo = vec3(0.0); m.emis = mix(vec3(0.62, 0.52, 1.0), vec3(0.95, 0.92, 1.0), bands * 0.5) * I;
+  } else if (id == 14) {                           // DARK metal
+    m.albedo = vec3(0.05, 0.052, 0.058); m.metal = 0.8; m.rough = 0.32;
+  } else if (id == 15) {                           // SOLAR cells
+    vec2 f = fract(uv / vec2(1.1, 1.1));
+    float grid = step(0.05, f.x) * step(0.05, f.y);
+    m.albedo = mix(vec3(0.5), vec3(0.015, 0.025, 0.06), grid); m.rough = mix(0.5, 0.12, grid); m.metal = 0.5 * grid;
+  } else if (id == 16) {                           // RING: gate ring segment, e = gate*3 + ring
+    int gi = int(e + 0.5);
+    int li = gi / 3;
+    m.albedo = vec3(0.05, 0.052, 0.058); m.metal = 0.8; m.rough = 0.3;
+    float inner = smoothstep(0.55, 0.9, vAttr.z);   // v: 0 outer -> 1 inner edge
+    float flash = uGate[gi];
+    m.emis = uLine[li] * inner * (2.2 + 14.0 * flash) + vec3(1.0) * inner * flash * 4.0;
+  } else if (id == 17) {                           // SIGN: canvas atlas
+    vec4 t = texture(uSigns, vec2(vAttr.y, vAttr.z));
+    m.albedo = vec3(0.02); m.rough = 0.3;
+    m.emis = t.rgb * t.rgb * 2.2;
+  } else if (id == 18) {                           // FIBER: glassy light guide, colour e
+    int li = int(e + 0.5);
+    m.albedo = vec3(0.02); m.rough = 0.1; m.metal = 0.6;
+    m.emis = uLine[li] * (0.35 + 0.25 * sin(vAttr.y * 0.08 - uCam.w * 6.0));
+  } else if (id == 19) {                           // RAIL: polished magnet rail
+    m.albedo = vec3(0.55, 0.56, 0.58); m.metal = 1.0; m.rough = 0.22;
+  } else if (id == 20) {                           // PLATFORM deck plating
+    vec2 pn = panels(uv, vec2(6.0, 6.0), 0.06);
+    m.albedo = vec3(0.16, 0.165, 0.17) * (0.8 + 0.25 * pn.y) * (0.75 + 0.25 * pn.x); m.rough = 0.7; m.metal = 0.2;
+    float stripe = step(abs(fract(uv.x / 24.0) - 0.5), 0.02);
+    m.albedo = mix(m.albedo, vec3(0.5, 0.42, 0.18), stripe * 0.6);
+  }
+  return m;
+}
+
+float shadowAt(vec3 P, vec3 N) {
+  vec3 L = uSun.xyz;
+  float slope = clamp(1.0 - dot(N, L), 0.0, 1.0);
+  vec4 lp = uLightVP * vec4(P + N * (0.35 + 0.8 * slope), 1.0);
+  vec3 c = lp.xyz / lp.w * 0.5 + 0.5;
+  if (any(lessThan(c, vec3(0.0))) || any(greaterThan(c, vec3(1.0)))) return 1.0;
+  c.z -= 0.0004;
+  float s = 0.0;
+#if QUALITY_HIGH
+  const vec2 P16[12] = vec2[12](vec2(-0.94, -0.40), vec2(0.95, -0.77), vec2(-0.09, -0.93), vec2(0.34, 0.29),
+    vec2(-0.92, 0.46), vec2(-0.82, -0.88), vec2(0.54, -0.18), vec2(-0.26, -0.39), vec2(0.07, 0.86),
+    vec2(0.84, 0.63), vec2(-0.39, 0.83), vec2(0.45, -0.72));
+  for (int i = 0; i < 12; i++) s += texture(uShadow, vec3(c.xy + P16[i] * uShadowTexel * 1.6, c.z));
+  return s / 12.0;
+#else
+  for (int x = -1; x <= 1; x++) for (int y = -1; y <= 1; y++) s += texture(uShadow, vec3(c.xy + vec2(x, y) * uShadowTexel, c.z));
+  return s / 9.0;
+#endif
+}
+
+void main() {
+  int id = int(vAttr.x + 0.5);
+  Mat m = material(id, vAttr.w);
+  vec3 N = normalize(vN + m.nOff);
+  vec3 V = normalize(uCam.xyz - vWP);
+  if (dot(N, V) < 0.0 && (id == 6 || id == 15 || id == 17 || id == 11 || id == 8)) N = -N;
+  vec3 L = uSun.xyz;
+  float ndl = max(dot(N, L), 0.0);
+  float sh = ndl > 0.0 ? shadowAt(vWP, normalize(vN)) : 0.0;
+  float ndv = max(dot(N, V), 1e-3);
+  vec3 H = normalize(L + V);
+  float ndh = max(dot(N, H), 0.0), vdh = max(dot(V, H), 0.0);
+  float r = max(m.rough, 0.04), a = r * r, a2 = a * a;
+  float dd = ndh * ndh * (a2 - 1.0) + 1.0;
+  float D = a2 / (PI * dd * dd);
+  float k = (r + 1.0) * (r + 1.0) / 8.0;
+  float G = ndv / (ndv * (1.0 - k) + k) * ndl / (ndl * (1.0 - k) + k);
+  vec3 F0 = mix(vec3(0.04), m.albedo, m.metal);
+  vec3 F = F0 + (1.0 - F0) * pow(1.0 - vdh, 5.0);
+  vec3 spec = D * G * F / max(4.0 * ndv * ndl, 1e-3);
+  vec3 kd = (1.0 - F) * (1.0 - m.metal);
+  vec3 sunC = uSunCol.rgb * uSun.w;
+  vec3 col = (kd * m.albedo / PI + spec) * sunC * ndl * sh;
+
+  // environment: planet-shine and nebula light (irradiance), reflections (prefiltered by mip)
+  float envOcc = mix(0.55, 1.0, sh) * m.ao;
+  vec3 irr = texture(uIrr, N).rgb;
+  vec3 R = reflect(-V, N);
+  vec3 envS = textureLod(uEnv, R, r * 6.0).rgb;
+  vec3 Fe = F0 + (max(vec3(1.0 - r), F0) - F0) * pow(1.0 - ndv, 5.0);
+  col += kd * m.albedo * irr * envOcc + envS * Fe * envOcc;
+
+  // heat light from the radiator crown, treated as a ring of emitters
+  vec2 hxz = vWP.xz; float hr = length(hxz);
+  vec2 hdir = hxz / max(hr, 1e-3);
+  float hrr = clamp(hr, 55.0, 150.0);
+  vec3 Lp = vec3(hdir.x * hrr, clamp(vWP.y, 6.0, 54.0), hdir.y * hrr);
+  vec3 dl = Lp - vWP; float d2 = dot(dl, dl);
+  float hl = max(dot(N, dl * inversesqrt(d2 + 1e-4)), 0.0);
+  col += kd * m.albedo / PI * uHeat.rgb * hl * 9000.0 / (d2 + 900.0) * (id == 5 ? 0.05 : 1.0);
+
+  col += m.emis;
+  o = vec4(col, 1.0);
+}`;
+
+// =====================================================================
+//  8. The station (design doc §2–3). Everything is generated here.
+// =====================================================================
+const ST = { lines: [], gates: [], draws: [], dyn: {} };
+
+// prototypes shared by instance sets
+function protoBox(mat) { const b = new MeshBuilder(); b.box([0, 0, 0], [0.5, 0.5, 0.5], [1, 0, 0], [0, 1, 0], [0, 0, 1], mat); return b.upload(); }
+function protoCyl(mat, seg = 20) { // unit cylinder along X (-0.5..0.5), radius 1, capped
+  const b = new MeshBuilder();
+  const fr = [-0.5, 0.5].map((x, i) => ({ p: [x, 0, 0], T: [1, 0, 0], N: [0, 1, 0], B: [0, 0, 1], s: i }));
+  b.sweepTube(fr, 1, seg, mat);
+  for (const s of [-1, 1]) {
+    const c = b.vert([s * 0.5, 0, 0], [s, 0, 0], mat), ring = [];
+    for (let k = 0; k <= seg; k++) { const a = k / seg * Math.PI * 2; ring.push(b.vert([s * 0.5, Math.sin(a), Math.cos(a)], [s, 0, 0], mat)); }
+    for (let k = 0; k < seg; k++) b.tri(c, ring[k], ring[k + 1]);
+  }
+  return b.upload();
+}
+function protoSphere(mat, seg = 18) {
+  const b = new MeshBuilder();
+  const prof = [];
+  for (let i = 0; i <= seg / 2; i++) { const a = -Math.PI / 2 + i / (seg / 2) * Math.PI; prof.push([Math.cos(a) + 1e-4, Math.sin(a)]); }
+  b.lathe([0, 0, 0], prof, seg, mat);
+  return b.upload();
+}
+
+/** Square box-truss between a and b: 4 chords, frames and alternating diagonals. */
+function trussBox(set, a, b, w, bay, member = 0.7, up = [0, 1, 0]) {
+  const d = v3.sub(b, a), L = v3.len(d);
+  const X = v3.mul(d, 1 / L);
+  let Z = v3.cross(X, up); if (v3.len(Z) < 1e-3) Z = v3.cross(X, [1, 0, 0]); Z = v3.norm(Z);
+  const Y = v3.cross(Z, X);
+  const n = Math.max(1, Math.round(L / bay));
+  const hw = w / 2;
+  const corner = (t, i) => {
+    const sy = (i === 0 || i === 1) ? hw : -hw, sz = (i === 0 || i === 3) ? hw : -hw;
+    return v3.add(v3.madd(a, X, L * t), v3.add(v3.mul(Y, sy), v3.mul(Z, sz)));
+  };
+  for (let i = 0; i < 4; i++) set.beam(corner(0, i), corner(1, i), member, member, up);
+  for (let k = 0; k <= n; k++) {
+    const t = k / n;
+    for (let i = 0; i < 4; i++) set.beam(corner(t, i), corner(t, (i + 1) % 4), member * 0.8, member * 0.8, X);
+    if (k < n) {
+      const t1 = (k + 1) / n;
+      for (let i = 0; i < 4; i++) {
+        const j = (i + 1) % 4;
+        if ((k + i) % 2) set.beam(corner(t, i), corner(t1, j), member * 0.6, member * 0.6, X);
+        else set.beam(corner(t, j), corner(t1, i), member * 0.6, member * 0.6, X);
+      }
+    }
+  }
+}
+
+/** Frames through arbitrary XZ points at height y. */
+function framesOf(y, pts) { const p = new Path(y, pts[0][0], pts[0][1], 1, 0); p.pts = pts.slice(); return p.frames(); }
+
+/** Balloon-loop line (design doc §2): stem from gate to loop, S-curve junction, loop around the core, back out. */
+function balloonLine(opt) {
+  const { y, R, u, g, rt, s1, rb, gateX } = opt;
+  const w = [-u[1], u[0]];                                   // right of the outward heading
+  const a = Math.sqrt((R + rt) * (R + rt) - (g + rt) * (g + rt));
+  const at = (s, o) => [u[0] * s + w[0] * o, u[1] * s + w[1] * o];
+  // centre line of the stem, outward: straight, 45-degree bend to east, straight to the gate
+  const cl = new Path(y, ...at(a, 0), u[0], u[1]);
+  cl.line(...at(s1, 0)).turn([1, 0], rb);
+  cl.line(gateX, cl.cur[1]);
+  const cf = cl.frames();
+  const railIn = offsetFrames(cf, g).reverse().map((F) => [F.p[0], F.p[2]]);
+  const railOut = offsetFrames(cf, -g).map((F) => [F.p[0], F.p[2]]);
+  // S-curve into the loop (external tangency), the loop itself, S-curve out
+  const cIn = at(a, g + rt), cOut = at(a, -(g + rt));
+  const nIn = v3.norm([cIn[0], 0, cIn[1]]), nOut = v3.norm([cOut[0], 0, cOut[1]]);
+  const tIn = [nIn[0] * R, nIn[2] * R], tOut = [nOut[0] * R, nOut[2] * R];
+  const lp = new Path(y, ...railIn[railIn.length - 1], -u[0], -u[1]);
+  lp.arc(cIn, tIn);
+  const turnA = lp.pts.length;
+  lp.arc([0, 0], tOut);
+  const loopEnd = lp.pts.length;
+  lp.arc(cOut, railOut[0]);
+  // sanity: the two junction arcs must be short (they are ~76 degrees)
+  const arcLen = (i0, i1) => { let L = 0; for (let i = i0 + 1; i < i1; i++) L += Math.hypot(lp.pts[i][0] - lp.pts[i - 1][0], lp.pts[i][1] - lp.pts[i - 1][1]); return L; };
+  if (arcLen(0, turnA) > rt * 2 || arcLen(loopEnd - 1, lp.pts.length) > rt * 2) console.warn('balloon junction took the long way', opt);
+  const pts = railIn.concat(lp.pts.slice(1), railOut.slice(1));
+  return { frames: framesOf(y, pts), centre: cf, a, stemZ: cl.cur[1] };
+}
+
+/** Swept guideway with route-colour stripe, magnet rails and a Warren truss underneath. */
+function guideway(S, trussSet, frames, line, depth = 13) {
+  const box = [[-3, -0.7], [-2.2, -3.5], [2.2, -3.5], [3, -0.7], [3, 0], [-3, 0]]; // counter-clockwise (x along B, y up)
+  S.sweepFlat(frames, box, MAT.GUIDE, line, true);
+  S.sweepFlat(offsetFrames(frames, 0, 0.03), [[-0.8, 0], [0.8, 0]].reverse(), MAT.STRIPE, line, false);
+  for (const o of [-1.7, 1.7]) S.sweepFlat(offsetFrames(frames, o, 0), [[-0.25, 0], [0.25, 0], [0.25, 0.28], [-0.25, 0.28]], MAT.RAIL, line, true);
+  // Warren truss: two inclined planes meeting at a bottom chord
+  const st = every(frames, 15);
+  for (let k = 0; k + 1 < st.length; k++) {
+    const A = st[k], B = st[k + 1];
+    const mid = { p: v3.lerp(A.p, B.p, 0.5), B: v3.norm(v3.lerp(A.B, B.B, 0.5)) };
+    const bot = v3.add(mid.p, [0, -depth, 0]);
+    for (const sd of [-2.1, 2.1]) {
+      const ta = v3.add(v3.madd(A.p, A.B, sd), [0, -3.4, 0]), tb = v3.add(v3.madd(B.p, B.B, sd), [0, -3.4, 0]);
+      trussSet.beam(ta, bot, 0.55, 0.55);
+      trussSet.beam(bot, tb, 0.55, 0.55);
+    }
+    if (k + 2 < st.length) {
+      const C = st[k + 2], nb = v3.add(v3.lerp(B.p, C.p, 0.5), [0, -depth, 0]);
+      trussSet.beam(bot, nb, 0.8, 0.8);
+    }
+  }
+}
+
+/** A gate ring: 16 segments with gaps; e = gate*3 + ring (drives the flash uniform). */
+function gateRing(S, c, R, thick, depth, e) {
+  const Y = [0, 1, 0], Z = [0, 0, 1], X = [1, 0, 0];
+  const segs = 16, gap = 3 * Math.PI / 180, steps = 6;
+  for (let s = 0; s < segs; s++) {
+    const a0 = s / segs * Math.PI * 2 + gap / 2, a1 = (s + 1) / segs * Math.PI * 2 - gap / 2;
+    const rows = [];
+    for (let i = 0; i <= steps; i++) {
+      const a = a0 + (a1 - a0) * i / steps;
+      const rd = v3.add(v3.mul(Y, Math.cos(a)), v3.mul(Z, Math.sin(a)));
+      rows.push(rd);
+    }
+    const face = (rIn, rOut, xf, nFn, vIn, vOut) => {
+      let prev = null;
+      for (let i = 0; i <= steps; i++) {
+        const rd = rows[i];
+        const pA = v3.add(c, v3.add(v3.mul(rd, rIn), v3.mul(X, xf[0]))), pB = v3.add(c, v3.add(v3.mul(rd, rOut), v3.mul(X, xf[1])));
+        const n = nFn(rd);
+        const ia = S.vert(pA, n, MAT.RING, i, vIn, e), ib = S.vert(pB, n, MAT.RING, i, vOut, e);
+        if (prev) S.quad(prev[0], ia, ib, prev[1]);
+        prev = [ia, ib];
+      }
+    };
+    const hd = depth / 2;
+    face(R, R, [-hd, hd], (rd) => v3.mul(rd, -1), 1, 1);                         // inner face (bright)
+    face(R + thick, R + thick, [-hd, hd], (rd) => rd, 0, 0);                    // outer face
+    face(R, R + thick, [hd, hd], () => X, 1, 0);                                  // front
+    face(R, R + thick, [-hd, -hd], () => v3.mul(X, -1), 1, 0);                    // back
+  }
+}
+
+/** Canvas2D atlas for station signage (8 slots, 2 x 4). */
+function buildSigns() {
+  const W = 2048, H = 1024, cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const g2 = cv.getContext('2d');
+  g2.fillStyle = '#000'; g2.fillRect(0, 0, W, H);
+  const font = '"PingFang TC","Noto Sans TC","Microsoft JhengHei","WenQuanYi Zen Hei",system-ui,sans-serif';
+  const slots = [
+    ['C', LINE_HEX[0], '貨運線', 'CARGO LINE'], ['P', LINE_HEX[1], '客運線', 'PASSENGER LINE'],
+    ['D', LINE_HEX[2], '數據線', 'DATA LINE'], ['X', LINE_HEX[3], '通訊線', 'COMMS LINE'],
+    ['', '#E8ECF2', 'EXP 實驗算力中心', 'EXPERIMENTAL CORE'], ['', '#E8ECF2', 'OPUS 軌道總站', 'OPUS ORBITAL TERMINAL'],
+    ['P', LINE_HEX[1], '客運月台 1', 'PLATFORM P1 · 往深空'], ['C', LINE_HEX[0], '貨運泊位', 'CARGO BERTH C1'],
+  ];
+  slots.forEach(([letter, col, zh, en], i) => {
+    const x = (i % 2) * 1024, y = Math.floor(i / 2) * 256;
+    g2.save(); g2.translate(x, y);
+    g2.fillStyle = '#05070b'; g2.fillRect(8, 8, 1008, 240);
+    g2.fillStyle = col; g2.fillRect(8, 232, 1008, 8);
+    let tx = 60;
+    if (letter) {
+      g2.beginPath(); g2.arc(128, 124, 88, 0, Math.PI * 2); g2.fillStyle = col; g2.fill();
+      g2.fillStyle = '#05070b'; g2.font = `700 120px ${font}`; g2.textAlign = 'center'; g2.textBaseline = 'middle';
+      g2.fillText(letter, 128, 130);
+      tx = 250;
+    }
+    g2.textAlign = 'left'; g2.textBaseline = 'alphabetic';
+    g2.fillStyle = '#F1F4F8'; g2.font = `600 ${letter ? 92 : 84}px ${font}`; g2.fillText(zh, tx, 128);
+    g2.fillStyle = '#9AA6B6'; g2.font = `500 44px ${font}`; g2.fillText(en, tx + 4, 196);
+    g2.restore();
+  });
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, cv);
+  gl.generateMipmap(gl.TEXTURE_2D);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  const ext = gl.getExtension('EXT_texture_filter_anisotropic');
+  if (ext) gl.texParameterf(gl.TEXTURE_2D, ext.TEXTURE_MAX_ANISOTROPY_EXT, 8);
+  return t;
+}
+/** Double-sided sign quad: centre, facing normal n, size w x h, atlas slot. */
+function sign(S, c, n, w, h, slot) {
+  const up = [0, 1, 0], right = v3.norm(v3.cross(up, n));
+  const u0 = (slot % 2) * 0.5, v0 = Math.floor(slot / 2) * 0.25;
+  const P = (sx, sy) => v3.add(c, v3.add(v3.mul(right, sx * w / 2), v3.mul(up, sy * h / 2)));
+  const off = v3.mul(n, 0.15);
+  const uvF = [[u0, v0 + 0.25], [u0 + 0.5, v0 + 0.25], [u0 + 0.5, v0], [u0, v0]];
+  S.panel(v3.add(P(-1, -1), off), v3.add(P(1, -1), off), v3.add(P(1, 1), off), v3.add(P(-1, 1), off), n, MAT.SIGN, uvF);
+  const uvB = [[u0 + 0.5, v0 + 0.25], [u0, v0 + 0.25], [u0, v0], [u0 + 0.5, v0]];
+  S.panel(v3.sub(P(-1, -1), off), v3.sub(P(1, -1), off), v3.sub(P(1, 1), off), v3.sub(P(-1, 1), off), v3.mul(n, -1), MAT.SIGN, uvB);
+  S.box(c, [0.1, h / 2 + 0.6, w / 2 + 0.6], n, up, right, MAT.DARK);
+}
+
+function buildStation() {
+  const R = rng(5055);
+  const S = new MeshBuilder();
+  const I = { truss: new Instances(), dark: new Instances(), hull: new Instances(), mli: new Instances(), cont: new Instances(), hab: new Instances(), tank: new Instances(), fin: new Instances(), plat: new Instances() };
+  const polar = (r, th, y) => [r * Math.cos(th), y, r * Math.sin(th)];
+  const DEG = Math.PI / 180;
+
+  // ---------------- EXP core ----------------
+  for (let i = 0; i < 28; i++) {
+    const y0 = -140 + i * 10;
+    S.prismY([0, 0, 0], 36, 8, y0, y0 + 7.5, MAT.WAFER, 0, Math.PI / 8);
+  }
+  S.prismY([0, 0, 0], 31, 32, -140, 140, MAT.COREGLOW);
+  for (let k = 0; k < 8; k++) {
+    const th = Math.PI / 8 + k * Math.PI / 4;
+    I.dark.beam(polar(36.6, th, -141), polar(36.6, th, 141), 1.6, 1.6, [1, 0, 0]);
+  }
+  S.prismY([0, 0, 0], 26, 8, 138, 150, MAT.HULL, 0, Math.PI / 8, 22);
+  S.prismY([0, 0, 0], 17, 8, 150, 176, MAT.DARK, 0, Math.PI / 8, 3);
+  S.prismY([0, 0, 0], 40, 8, -150, -138, MAT.HULL, 0, Math.PI / 8, 36);
+  // radiator crown: collars + 60 fins
+  for (const y of [-4, 60]) S.prismY([0, 0, 0], 47, 40, y, y + 4, MAT.DARK);
+  {
+    const fb = new MeshBuilder();
+    const r0 = 45, r1 = 155, n = 12;
+    // fin blade: root 0..60 tall, tip 20..40, thickness 1.2; u = radial fraction, v = height fraction
+    const yb = (t) => lerp(0, 20, t), yt = (t) => lerp(60, 40, t);
+    for (const zs of [0.6, -0.6]) {
+      let prev = null;
+      for (let i = 0; i <= n; i++) {
+        const t = i / n, x = lerp(r0, r1, t);
+        const a = fb.vert([x, yb(t), zs], [0, 0, Math.sign(zs)], MAT.FIN, t, 0), b = fb.vert([x, yt(t), zs], [0, 0, Math.sign(zs)], MAT.FIN, t, 1);
+        if (prev) fb.quad(prev[0], a, b, prev[1]);
+        prev = [a, b];
+      }
+    }
+    fb.panel([r1, 20, 0.6], [r1, 20, -0.6], [r1, 40, -0.6], [r1, 40, 0.6], [1, 0, 0], MAT.FIN, [[1, 0], [1, 0], [1, 1], [1, 1]]);
+    const topN = v3.norm([20 / 110, 1, 0]), botN = v3.norm([20 / 110, -1, 0]);
+    fb.panel([r0, 60, 0.6], [r1, 40, 0.6], [r1, 40, -0.6], [r0, 60, -0.6], topN, MAT.FIN, [[0, 1], [1, 1], [1, 1], [0, 1]]);
+    fb.panel([r0, 0, 0.6], [r1, 20, 0.6], [r1, 20, -0.6], [r0, 0, -0.6], botN, MAT.FIN, [[0, 0], [1, 0], [1, 0], [0, 0]]);
+    ST.finProto = fb.upload();
+    for (let i = 0; i < 60; i++) {
+      const th = i / 60 * Math.PI * 2, tilt = (i % 2 ? 1 : -1) * 4 * DEG;
+      const X = [Math.cos(th), 0, Math.sin(th)], Zr = [-Math.sin(th), 0, Math.cos(th)];
+      const Y = v3.add(v3.mul([0, 1, 0], Math.cos(tilt)), v3.mul(Zr, Math.sin(tilt)));
+      const Z = v3.cross(X, Y);
+      I.fin.add([0, 0, 0], X, Y, Z, 1, 1, 1, [0.92 + 0.16 * R(), 0, 0, 0]);
+    }
+  }
+  // base spokes to the deck ring
+  for (let k = 0; k < 6; k++) {
+    const th = (30 + k * 60) * DEG;
+    trussBox(I.truss, polar(32, th, -146), polar(292, th, -172), 7, 14, 0.8);
+  }
+
+  // ---------------- deck ring (Y -170) ----------------
+  const DY = -172;
+  const seg = 64;
+  for (let k = 0; k < seg; k++) {
+    const t0 = k / seg * Math.PI * 2, t1 = (k + 1) / seg * Math.PI * 2;
+    for (const [r, y] of [[288, DY], [392, DY], [288, DY - 12], [392, DY - 12]]) I.truss.beam(polar(r, t0, y), polar(r, t1, y), 1.2, 1.2);
+    I.truss.beam(polar(288, t0, DY), polar(392, t0, DY), 0.9, 0.9);
+    I.truss.beam(polar(288, t0, DY - 12), polar(392, t0, DY - 12), 0.9, 0.9);
+    I.truss.beam(polar(288, t0, DY), polar(392, t1, DY - 12), 0.7, 0.7);
+    for (const r of [288, 392]) I.truss.beam(polar(r, t0, DY), polar(r, t1, DY - 12), 0.6, 0.6);
+    // deck plates on most sectors
+    if (R() < 0.8) {
+      const a = polar(292, t0 + 0.004, DY + 0.8), b = polar(388, t0 + 0.004, DY + 0.8), c = polar(388, t1 - 0.004, DY + 0.8), d = polar(292, t1 - 0.004, DY + 0.8);
+      S.panel(a, b, c, d, [0, 1, 0], MAT.PLATFORM, [[a[0], a[2]], [b[0], b[2]], [c[0], c[2]], [d[0], d[2]]]);
+      S.panel(d, c, b, a, [0, -1, 0], MAT.PLATFORM, [[0, 0], [1, 0], [1, 1], [0, 1]]);
+    }
+  }
+  // modules on the deck (skip the cargo sector 110..160 degrees and the C junction 20..70)
+  const inArc = (thDeg, a, b) => { const t = ((thDeg % 360) + 360) % 360; return t >= a && t <= b; };
+  for (let k = 0; k < 20; k++) {
+    const thD = k * 18 + 4;
+    if (inArc(thD, 104, 166)) continue;
+    const th = thD * DEG;
+    for (const r of [318, 366]) {
+      if (R() < 0.25) continue;
+      const len = 36 + R() * 26, rad = 6.5 + R() * 2.5;
+      const X = [-Math.sin(th), 0, Math.cos(th)], Z = [Math.cos(th), 0, Math.sin(th)];
+      const c = polar(r, th, DY + 2 + rad);
+      I.hab.add(c, X, [0, 1, 0], Z, len, rad, rad, [R(), R(), 0, 0]);
+      // saddles
+      for (const s of [-0.3, 0.3]) I.dark.add(v3.madd(polar(r, th, DY + 1 + rad * 0.4), X, s * len), X, [0, 1, 0], Z, 2, rad * 0.8, rad * 2.1);
+      // end caps in MLI
+      for (const s of [-0.5, 0.5]) I.mli.add(v3.madd(c, X, s * len), X, [0, 1, 0], Z, 2.4, rad * 1.5, rad * 1.5);
+    }
+    // tank cluster between the rows, off the C pylons
+    if (R() < 0.7) {
+      const th2 = (thD + 9) * DEG;
+      for (let j = 0; j < 3; j++) {
+        const rr = 5 + R() * 3, c = polar(342 + (j - 1) * 13, th2 + (R() - 0.5) * 0.02, DY + 1 + rr);
+        I.tank.add(c, [1, 0, 0], [0, 1, 0], [0, 0, 1], rr, rr, rr);
+      }
+    }
+    // radiator panels at the outer edge, edge-on to the ring
+    if (R() < 0.6) {
+      const th3 = (thD + 13) * DEG, X = [Math.cos(th3), 0, Math.sin(th3)], Z = [-Math.sin(th3), 0, Math.cos(th3)];
+      I.hull.add(polar(410, th3, DY + 6), X, [0, 1, 0], Z, 30, 14, 0.5);
+      I.dark.beam(polar(392, th3, DY), polar(410, th3, DY + 6), 1, 1);
+    }
+  }
+  // greebles on the deck and modules
+  for (let i = 0; i < (HI() ? 1600 : 700); i++) {
+    const thD = R() * 360;
+    if (inArc(thD, 104, 166)) continue;
+    const th = thD * DEG, r = 296 + R() * 90;
+    const sx = 1 + R() * 5, sy = 0.8 + R() * 3.5, sz = 1 + R() * 5;
+    const X = [Math.cos(th), 0, Math.sin(th)], Z = [-Math.sin(th), 0, Math.cos(th)];
+    const set = R() < 0.18 ? I.mli : (R() < 0.5 ? I.dark : I.hull);
+    set.add(polar(r, th, DY + 0.8 + sy / 2), X, [0, 1, 0], Z, sx, sy, sz);
+  }
+
+  // ---------------- lines ----------------
+  // P: passenger loop above the crown; C: cargo loop above the deck
+  const P = balloonLine({ y: 90, R: 250, u: [Math.SQRT1_2, -Math.SQRT1_2], g: 7, rt: 70, s1: 516, rb: 120, gateX: 1050 });
+  const C = balloonLine({ y: -100, R: 340, u: [Math.SQRT1_2, Math.SQRT1_2], g: 7, rt: 80, s1: 601, rb: 120, gateX: 1150 });
+  guideway(S, I.truss, P.frames, 1);
+  guideway(S, I.truss, C.frames, 0, 11);
+  ST.lines[0] = { name: 'C', y: -100, frames: C.frames, gate: [1150, -100, C.stemZ] };
+  ST.lines[1] = { name: 'P', y: 90, frames: P.frames, gate: [1050, 90, P.stemZ] };
+
+  // P supports: eight spokes from the core under the loop
+  for (let k = 0; k < 8; k++) {
+    const th = (22.5 + k * 45) * DEG;
+    trussBox(I.truss, polar(40, th, 80), polar(250, th, 80), 6, 12, 0.7);
+  }
+  // C supports: pylons from the deck, skipping the junction gap
+  for (let k = 0; k < 36; k++) {
+    const thD = k * 10;
+    if (inArc(thD, 22, 68)) continue;
+    const th = thD * DEG;
+    I.dark.beam(polar(340, th, DY), polar(340, th, -104), 3, 3);
+    I.truss.beam(polar(326, th, DY), polar(340, th, -130), 1, 1);
+    I.truss.beam(polar(354, th, DY), polar(340, th, -130), 1, 1);
+  }
+
+  // D: three braided fibres from the gate into the core, fanning into the wafers
+  const DYL = -30, dFrames = [];
+  for (let x = 1250; x >= 70; x -= 3) dFrames.push({ p: [x, DYL, 0], T: [-1, 0, 0], N: [0, 1, 0], B: [0, 0, -1], s: 1250 - x });
+  for (let f = 0; f < 3; f++) {
+    const fr = dFrames.map((F) => { const a = F.s * 0.035 + f * Math.PI * 2 / 3; return { ...F, p: [F.p[0], F.p[1] + Math.sin(a) * 1.7, F.p[2] + Math.cos(a) * 1.7] }; });
+    S.sweepTube(fr, 0.8, 8, MAT.FIBER, 2);
+  }
+  for (let k = 0; k < 8; k++) {
+    const ty = -95 + k * 10, tz = (k - 3.5) * 3.2;
+    const pts = [];
+    for (let i = 0; i <= 16; i++) { const t = i / 16, e = t * t * (3 - 2 * t); pts.push({ p: [lerp(70, 34, t), lerp(DYL, ty + 3.75, e), lerp(0, tz, e)], T: [-1, 0, 0], N: [0, 1, 0], B: [0, 0, -1], s: t * 40 }); }
+    S.sweepTube(pts, 0.45, 6, MAT.FIBER, 2);
+  }
+  ST.lines[2] = { name: 'D', y: DYL, frames: dFrames, gate: [1250, DYL, 0] };
+  // keel and D pylons
+  trussBox(I.truss, [392, DY - 6, 0], [1262, DY - 6, 0], 12, 15, 0.9);
+  for (let x = 460; x <= 1240; x += 130) I.dark.beam([x, DY, 0], [x, DYL - 3, 0], 2.2, 2.2);
+  // tie trusses from the keel to the P and C stems
+  for (const x of [640, 930]) {
+    trussBox(I.truss, [x, DY, -6], [x, 84, P.stemZ + 3], 5, 16, 0.6);
+    trussBox(I.truss, [x, DY, 6], [x, -112, C.stemZ - 3], 5, 16, 0.6);
+  }
+
+  // X: conduit from the spire to the antenna, antenna tower and dish on the planet side
+  const ANT = [-560, 0, -50];
+  trussBox(I.truss, [-390, DY - 6, -50], [ANT[0], DY - 6, -50], 10, 14, 0.8);
+  trussBox(I.truss, [ANT[0], DY - 12, ANT[2]], [ANT[0], 206, ANT[2]], 16, 14, 1.0);
+  const HUB = [ANT[0] + 6, 250, ANT[2]], FOC = 34, DR = 45;
+  S.box([ANT[0], 212, ANT[2]], [9, 6, 9], [1, 0, 0], [0, 1, 0], [0, 0, 1], MAT.HULL);
+  I.dark.beam([ANT[0], 212, ANT[2]], HUB, 5, 5);
+  {
+    // paraboloid dish opening to +X
+    const rings = 14, segs = 48;
+    const Yv = [0, 1, 0], Zv = [0, 0, 1];
+    const rows = [];
+    for (let i = 0; i <= rings; i++) {
+      const r = DR * i / rings, depth = r * r / (4 * FOC), row = [];
+      for (let k = 0; k <= segs; k++) {
+        const a = k / segs * Math.PI * 2, rd = v3.add(v3.mul(Yv, Math.cos(a)), v3.mul(Zv, Math.sin(a)));
+        const p = v3.add(HUB, v3.add([depth, 0, 0], v3.mul(rd, r)));
+        const n = v3.norm(v3.add([1, 0, 0], v3.mul(rd, -r / (2 * FOC))));
+        row.push(S.vert(p, n, MAT.DISH, a * r, r, 0));
+      }
+      rows.push(row);
+    }
+    for (let i = 0; i < rings; i++) for (let k = 0; k < segs; k++) S.quad(rows[i][k], rows[i][k + 1], rows[i + 1][k + 1], rows[i + 1][k]);
+    // back ribs and feed tripod
+    for (let k = 0; k < 12; k++) {
+      const a = k / 12 * Math.PI * 2, rd = [0, Math.cos(a), Math.sin(a)];
+      const rim = v3.add(HUB, v3.add([DR * DR / (4 * FOC), 0, 0], v3.mul(rd, DR)));
+      I.dark.beam(v3.add(HUB, [-6, 0, 0]), v3.add(rim, [-1.5, 0, 0]), 1.2, 1.2);
+      if (k % 4 === 0) I.dark.beam(rim, v3.add(HUB, [FOC, 0, 0]), 0.7, 0.7);
+    }
+    S.box(v3.add(HUB, [FOC, 0, 0]), [2.2, 3.6, 3.6], [1, 0, 0], [0, 1, 0], [0, 0, 1], MAT.HULL);
+    S.box(v3.add(HUB, [-7, 0, 0]), [4, 7, 7], [1, 0, 0], [0, 1, 0], [0, 0, 1], MAT.MLI);
+  }
+  ST.antenna = { hub: HUB, focus: v3.add(HUB, [FOC, 0, 0]) };
+  // conduit truss and jade fibre from the spire top to the dish mount
+  {
+    const a = [0, 170, 0], b = [ANT[0] + 4, 214, ANT[2]];
+    trussBox(I.truss, a, b, 3.2, 10, 0.4);
+    const fr = [];
+    const n = 120;
+    for (let i = 0; i <= n; i++) { const t = i / n; fr.push({ p: v3.lerp(a, b, t), T: v3.norm(v3.sub(b, a)), N: [0, 1, 0], B: v3.norm(v3.cross(v3.sub(b, a), [0, 1, 0])), s: t * v3.dist(a, b) }); }
+    S.sweepTube(fr, 0.55, 8, MAT.FIBER, 3);
+  }
+  ST.lines[3] = { name: 'X', y: 250, gate: [950, 250, -50] };
+
+  // ---------------- gates: three coaxial rings each, all facing east ----------------
+  const GATE = [
+    { li: 0, c: [1150, -100, C.stemZ], R: 40, t: 4.5 },
+    { li: 1, c: [1050, 90, P.stemZ], R: 25, t: 3.5 },
+    { li: 2, c: [1250, DYL, 0], R: 17, t: 3.0 },
+    { li: 3, c: [950, 250, -50], R: 30, t: 3.5 },
+  ];
+  for (const G of GATE) {
+    for (let r = 0; r < 3; r++) {
+      const c = v3.add(G.c, [r * 40 + (r ? 10 : 0), 0, 0]);
+      const Rr = G.R * (1 - r * 0.06);
+      gateRing(S, c, Rr, G.t, 4, G.li * 3 + r);
+      // four thruster pods per ring
+      for (let k = 0; k < 4; k++) {
+        const a = (k + 0.5) * Math.PI / 2, rd = [0, Math.cos(a), Math.sin(a)];
+        I.dark.add(v3.add(c, v3.mul(rd, Rr + G.t + 1.2)), [1, 0, 0], [0, 1, 0], [0, 0, 1], 5, 2.4, 2.4);
+      }
+    }
+    // square frame tying ring 1 to its track
+    if (G.li !== 3) {
+      const h = G.R + G.t + 2, c = G.c;
+      const q = [[h, h], [h, -h], [-h, -h], [-h, h]].map(([y, z]) => v3.add(c, [0, y, z]));
+      for (let k = 0; k < 4; k++) I.dark.beam(q[k], q[(k + 1) % 4], 2.2, 2.2, [1, 0, 0]);
+      if (G.li !== 2) I.dark.beam(v3.add(c, [0, -h, 0]), v3.add(c, [-60, -14, 0]), 2, 2);
+    }
+    sign(S, v3.add(G.c, [-2, G.R + G.t + 16, 0]), [-1, 0, 0], 32, 8, G.li);
+  }
+  ST.gates = GATE;
+
+  // ---------------- passenger terminal on the west of the P loop ----------------
+  {
+    const r0 = 258, r1 = 292, y0 = 66, y1 = 110, a0 = 155 * DEG, a1 = 205 * DEG, n = 40;
+    const col = (r, a, y) => polar(r, a, y);
+    const wall = (r, nSign, mat) => {
+      let prev = null;
+      for (let i = 0; i <= n; i++) {
+        const a = a0 + (a1 - a0) * i / n, nr = [Math.cos(a) * nSign, 0, Math.sin(a) * nSign];
+        const s = (a - a0) * r;
+        const ia = S.vert(col(r, a, y0), nr, mat, s, 0, 1), ib = S.vert(col(r, a, y1), nr, mat, s, y1 - y0, 1);
+        if (prev) S.quad(prev[0], ia, ib, prev[1]);
+        prev = [ia, ib];
+      }
+    };
+    wall(r1, 1, MAT.GLASS); wall(r0, -1, MAT.GLASS);
+    const slab = (y, th, mat) => {
+      let prev = null;
+      for (let i = 0; i <= n; i++) {
+        const a = a0 + (a1 - a0) * i / n;
+        const ia = S.vert(col(r0 - 1, a, y), [0, 1, 0], mat, 0, 0), ib = S.vert(col(r1 + 1, a, y), [0, 1, 0], mat, 0, 0);
+        const ja = S.vert(col(r0 - 1, a, y - th), [0, -1, 0], mat, 0, 0), jb = S.vert(col(r1 + 1, a, y - th), [0, -1, 0], mat, 0, 0);
+        const ka = S.vert(col(r1 + 1, a, y), [Math.cos(a), 0, Math.sin(a)], mat, 0, 0), kb = S.vert(col(r1 + 1, a, y - th), [Math.cos(a), 0, Math.sin(a)], mat, 0, 0);
+        if (prev) { S.quad(prev[0], ia, ib, prev[1]); S.quad(prev[2], jb, ja, prev[3]); S.quad(prev[4], ka, kb, prev[5]); }
+        prev = [ia, ib, ja, jb, ka, kb];
+      }
+    };
+    slab(y1 + 1.5, 2.5, MAT.HULL); slab(y0 + 0.5, 2, MAT.HULL); slab(84, 1.2, MAT.HULL); slab(97, 1.0, MAT.DARK);
+    for (let i = 0; i <= 20; i++) {
+      const a = a0 + (a1 - a0) * i / 20;
+      I.dark.beam(col(r1 + 0.8, a, y0), col(r1 + 0.8, a, y1 + 1), 1.1, 1.8, [1, 0, 0]);
+      I.dark.beam(col(r0 - 0.8, a, y0), col(r0 - 0.8, a, y1 + 1), 1.1, 1.8, [1, 0, 0]);
+    }
+    for (const a of [a0, a1]) {
+      const nr = [-Math.sin(a) * (a === a0 ? -1 : 1), 0, Math.cos(a) * (a === a0 ? -1 : 1)];
+      S.panel(col(r0, a, y0), col(r1, a, y0), col(r1, a, y1), col(r0, a, y1), nr, MAT.HULL);
+    }
+    // platform edge along the track
+    for (let i = 0; i < 24; i++) {
+      const aa = a0 + (a1 - a0) * i / 24, ab = a0 + (a1 - a0) * (i + 1) / 24;
+      const p = [col(254, aa, 88.6), col(258, aa, 88.6), col(258, ab, 88.6), col(254, ab, 88.6)];
+      S.panel(p[0], p[1], p[2], p[3], [0, 1, 0], MAT.PLATFORM);
+    }
+    // roof structure and signs
+    for (let i = 0; i < 6; i++) {
+      const a = a0 + (a1 - a0) * (i + 0.5) / 6;
+      I.hull.add(col(275, a, y1 + 4), [Math.cos(a), 0, Math.sin(a)], [0, 1, 0], [-Math.sin(a), 0, Math.cos(a)], 22, 4, 16);
+    }
+    sign(S, col(296, 180 * DEG, 118), [-1, 0, 0], 40, 10, 5);
+    sign(S, col(252, 170 * DEG, 104), [1, 0, 0], 24, 6, 6);
+    // observation dome at the west tip (glass is added with Sango in M5)
+    const DC = [-306, 86, 0], DRr = 15;
+    S.prismY(DC, DRr + 2, 24, -4, 0, MAT.HULL);
+    for (let k = 0; k < 12; k++) {
+      const a = k / 12 * Math.PI * 2, pts = [];
+      for (let i = 0; i <= 12; i++) {
+        const t = i / 12 * Math.PI / 2;
+        pts.push({ p: [DC[0] + Math.cos(a) * Math.cos(t) * DRr, DC[1] + Math.sin(t) * DRr, DC[2] + Math.sin(a) * Math.cos(t) * DRr], T: [0, 1, 0], N: [Math.cos(a), 0, Math.sin(a)], B: [-Math.sin(a), 0, Math.cos(a)], s: i });
+      }
+      for (let i = 0; i < pts.length; i++) { const j = Math.min(pts.length - 1, i + 1), h = Math.max(0, i - 1); pts[i].T = v3.norm(v3.sub(pts[j].p, pts[h].p)); pts[i].N = v3.norm(v3.cross(pts[i].B, pts[i].T)); }
+      S.sweepTube(pts, 0.35, 6, MAT.DARK);
+    }
+    for (const lat of [0.35, 0.8, 1.2]) {
+      const pts = [];
+      for (let i = 0; i <= 48; i++) {
+        const a = i / 48 * Math.PI * 2;
+        pts.push({ p: [DC[0] + Math.cos(a) * Math.cos(lat) * DRr, DC[1] + Math.sin(lat) * DRr, DC[2] + Math.sin(a) * Math.cos(lat) * DRr], T: [-Math.sin(a), 0, Math.cos(a)], N: [0, 1, 0], B: [Math.cos(a), 0, Math.sin(a)], s: i });
+      }
+      S.sweepTube(pts, 0.3, 6, MAT.DARK);
+    }
+    ST.dome = { c: DC, r: DRr };
+    // skybridge from the core
+    const sb = [];
+    for (let x = -38; x >= -262; x -= 4) sb.push({ p: [x, 70, 0], T: [-1, 0, 0], N: [0, 1, 0], B: [0, 0, -1], s: -x });
+    S.sweepTube(sb, 3.2, 14, MAT.HULL);
+    for (const zs of [-1, 1]) S.sweepFlat(offsetFrames(sb, zs * 3.25, 0).map((F) => ({ ...F, B: [0, 0, zs], N: [0, 1, 0] })), [[0, -0.8], [0, 0.8]], MAT.GLASS, 3, false);
+  }
+
+  // ---------------- cargo yard, south-west of the C loop ----------------
+  {
+    const a0 = 112 * DEG, a1 = 158 * DEG, n = 24;
+    for (let i = 0; i < n; i++) {
+      const aa = a0 + (a1 - a0) * i / n, ab = a0 + (a1 - a0) * (i + 1) / n;
+      const p = [polar(392, aa, DY + 1), polar(560, aa, DY + 1), polar(560, ab, DY + 1), polar(392, ab, DY + 1)];
+      S.panel(p[0], p[1], p[2], p[3], [0, 1, 0], MAT.PLATFORM, p.map((q) => [q[0], q[2]]));
+      S.panel(p[3], p[2], p[1], p[0], [0, -1, 0], MAT.PLATFORM);
+      for (const r of [392, 476, 560]) I.truss.beam(polar(r, aa, DY - 4), polar(r, ab, DY - 4), 1.4, 3);
+      I.truss.beam(polar(392, aa, DY - 4), polar(560, aa, DY - 4), 1, 3);
+    }
+    // berth platforms either side of the C track
+    for (let i = 0; i < 20; i++) {
+      const aa = 118 * DEG + i * 2.1 * DEG, ab = aa + 2.1 * DEG;
+      for (const [ra, rb] of [[322, 335], [345, 358]]) {
+        const p = [polar(ra, aa, -101.5), polar(rb, aa, -101.5), polar(rb, ab, -101.5), polar(ra, ab, -101.5)];
+        S.panel(p[0], p[1], p[2], p[3], [0, 1, 0], MAT.PLATFORM, p.map((q) => [q[0], q[2]]));
+      }
+    }
+    sign(S, polar(362, 135 * DEG, -84), [Math.cos(135 * DEG), 0, Math.sin(135 * DEG)], 26, 6.5, 7);
+    // container stacks
+    const PAL = [[0.24, 0.07, 0.035], [0.028, 0.05, 0.095], [0.10, 0.13, 0.042], [0.58, 0.54, 0.44], [0.052, 0.117, 0.117]];
+    for (let r = 405; r <= 548; r += 11) {
+      for (let aD = 114; aD <= 156; aD += 2.35) {
+        if (R() < 0.18) continue;
+        const th = aD * DEG, h = 1 + Math.floor(R() * R() * 4.2);
+        const X = [-Math.sin(th), 0, Math.cos(th)], Z = [Math.cos(th), 0, Math.sin(th)];
+        for (let k = 0; k < h; k++) {
+          const c = PAL[Math.floor(R() * PAL.length)], v = 0.8 + R() * 0.4;
+          I.cont.add(polar(r, th, DY + 1 + 1.3 + k * 2.65), X, [0, 1, 0], Z, 12.1, 2.6, 2.45, [c[0] * v, c[1] * v, c[2] * v, R()]);
+        }
+      }
+    }
+    // gantry cranes (moved along the berth in M3)
+    ST.cranes = [];
+    for (const aD of [127, 143]) {
+      const th = aD * DEG, X = [Math.cos(th), 0, Math.sin(th)], Z = [-Math.sin(th), 0, Math.cos(th)];
+      const legs = [polar(316, th, DY), polar(556, th, DY)];
+      for (const L of legs) for (const s of [-6, 6]) { const bot = v3.madd(L, Z, s); I.dark.beam(bot, [bot[0], -58, bot[2]], 2.2, 2.2, [1, 0, 0]); }
+      I.hull.add(polar(436, th, -54), X, [0, 1, 0], Z, 250, 7, 14);
+      I.mli.add(polar(372, th, -60), X, [0, 1, 0], Z, 12, 6, 16);
+      ST.cranes.push(th);
+    }
+    // floodlight masts
+    for (const [r, aD] of [[570, 116], [570, 154], [440, 110], [440, 160]]) {
+      const b = polar(r, aD * DEG, DY), t = polar(r, aD * DEG, DY + 70);
+      I.dark.beam(b, t, 1.6, 1.6, [1, 0, 0]);
+      I.hull.add(t, [1, 0, 0], [0, 1, 0], [0, 0, 1], 5, 2, 5);
+    }
+  }
+
+  // core sign bands
+  for (let k = 0; k < 4; k++) {
+    const th = k * Math.PI / 2 + Math.PI / 4;
+    sign(S, polar(27.5, th, 144), [Math.cos(th), 0, Math.sin(th)], 18, 4.5, 4);
+  }
+
+  // route glow ribbons (0.6 m above the stripe)
+  {
+    const xa = [0, 172, 0], xb = [ANT[0] + 4, 214, ANT[2]], xf = [];
+    for (let i = 0; i <= 60; i++) xf.push({ p: v3.lerp(xa, xb, i / 60), T: v3.norm(v3.sub(xb, xa)) });
+    ST.ribbons = buildRibbons([
+      { frames: every(C.frames, 4), line: 0, lift: 0.6 },
+      { frames: every(P.frames, 4), line: 1, lift: 0.6 },
+      { frames: dFrames.filter((F, i) => i % 2 === 0), line: 2 },
+      { frames: xf, line: 3 },
+    ]);
+  }
+  // ---------------- upload ----------------
+  const staticMesh = S.upload();
+  const bx = protoBox(MAT.TRUSS), dk = protoBox(MAT.DARK), hb = protoBox(MAT.HULL), ml = protoBox(MAT.MLI), ct = protoBox(MAT.CONTAINER);
+  const hab = protoCyl(MAT.HAB, 24), tank = protoSphere(MAT.MLI, 20);
+  ST.draws = [
+    { name: 'static', mesh: staticMesh },
+    { name: 'truss', inst: instanced(bx, I.truss) },
+    { name: 'dark', inst: instanced(dk, I.dark) },
+    { name: 'hull', inst: instanced(hb, I.hull) },
+    { name: 'mli', inst: instanced(ml, I.mli) },
+    { name: 'cont', inst: instanced(ct, I.cont) },
+    { name: 'hab', inst: instanced(hab, I.hab) },
+    { name: 'tank', inst: instanced(tank, I.tank) },
+    { name: 'fins', inst: instanced(ST.finProto, I.fin) },
+  ];
+  ST.stats = { staticVerts: staticMesh.verts, staticTris: staticMesh.count / 3, instances: Object.fromEntries(Object.entries(I).map(([k, v]) => [k, v.n])) };
+  ST.signTex = buildSigns();
+}
+
+// =====================================================================
+//  9. Lighting resources: environment cube (sky + planet), irradiance, sun shadow map
+// =====================================================================
+const CUBE_FACE_GLSL = `
+vec3 faceDir(int f, vec2 uv) {
+  if (f == 0) return vec3(1, -uv.y, -uv.x);
+  if (f == 1) return vec3(-1, -uv.y, uv.x);
+  if (f == 2) return vec3(uv.x, 1, uv.y);
+  if (f == 3) return vec3(uv.x, -1, -uv.y);
+  if (f == 4) return vec3(uv.x, -uv.y, 1);
+  return vec3(-uv.x, -uv.y, -1);
+}`;
+const ENV_FS = PLANET_GLSL + CUBE_FACE_GLSL + `
+uniform samplerCube uSky; uniform int uFace; uniform float uSize;
+out vec4 o;
+void main() {
+  vec3 rd = normalize(faceDir(uFace, gl_FragCoord.xy / uSize * 2.0 - 1.0));
+  vec3 col = textureLod(uSky, rd, 2.0).rgb;
+  vec3 T; vec3 pc = planetColor(rd, T);
+  o = vec4(col * T + pc, 1.0);
+}`;
+const IRR_FS = CUBE_FACE_GLSL + `
+uniform samplerCube uEnv; uniform int uFace; uniform float uSize;
+out vec4 o;
+void main() {
+  vec3 N = normalize(faceDir(uFace, gl_FragCoord.xy / uSize * 2.0 - 1.0));
+  vec3 up = abs(N.y) < 0.99 ? vec3(0, 1, 0) : vec3(1, 0, 0);
+  vec3 T = normalize(cross(up, N)), B = cross(N, T);
+  vec3 acc = vec3(0.0); float ws = 0.0;
+  for (int i = 0; i < 12; i++) for (int j = 0; j < 24; j++) {
+    float th = (float(i) + 0.5) / 12.0 * PI * 0.5, ph = (float(j) + 0.5) / 24.0 * PI * 2.0;
+    vec3 d = cos(th) * N + sin(th) * (cos(ph) * T + sin(ph) * B);
+    float w = cos(th) * sin(th);
+    acc += textureLod(uEnv, d, 3.0).rgb * w; ws += w;
+  }
+  o = vec4(acc / ws, 1.0);
+}`;
+let envCube = null, irrCube = null, envProg = null, irrProg = null;
+const ENV_SIZE = 128, IRR_SIZE = 16;
+function bakeEnvironment() {
+  if (!envCube) {
+    envCube = createCube(ENV_SIZE, Math.log2(ENV_SIZE) + 1);
+    irrCube = createCube(IRR_SIZE, 1);
+    envProg = program('envbake', FULLSCREEN_VS, ENV_FS);
+    irrProg = program('irrbake', FULLSCREEN_VS, IRR_FS);
+  }
+  const f = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, f);
+  gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND);
+  gl.useProgram(envProg.p);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_CUBE_MAP, skyCube);
+  gl.uniform1i(envProg.u.uSky, 0); gl.uniform1f(envProg.u.uSize, ENV_SIZE);
+  gl.viewport(0, 0, ENV_SIZE, ENV_SIZE);
+  for (let face = 0; face < 6; face++) {
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_CUBE_MAP_POSITIVE_X + face, envCube, 0);
+    gl.uniform1i(envProg.u.uFace, face);
+    drawFullscreen();
+  }
+  gl.bindTexture(gl.TEXTURE_CUBE_MAP, envCube);
+  gl.generateMipmap(gl.TEXTURE_CUBE_MAP);
+  gl.useProgram(irrProg.p);
+  gl.uniform1i(irrProg.u.uEnv, 0); gl.uniform1f(irrProg.u.uSize, IRR_SIZE);
+  gl.viewport(0, 0, IRR_SIZE, IRR_SIZE);
+  for (let face = 0; face < 6; face++) {
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_CUBE_MAP_POSITIVE_X + face, irrCube, 0);
+    gl.uniform1i(irrProg.u.uFace, face);
+    drawFullscreen();
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.deleteFramebuffer(f);
+}
+
+const SHADOW = { size: 0, tex: null, fbo: null, vp: null };
+function setupShadow() {
+  SHADOW.size = HI() ? 4096 : 2048;
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, gl.DEPTH_COMPONENT24, SHADOW.size, SHADOW.size);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_COMPARE_MODE, gl.COMPARE_REF_TO_TEXTURE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_COMPARE_FUNC, gl.LEQUAL);
+  SHADOW.tex = t;
+  SHADOW.fbo = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, SHADOW.fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, t, 0);
+  gl.drawBuffers([gl.NONE]); gl.readBuffer(gl.NONE);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  // orthographic light frustum fitted to the station bounds
+  const L = WORLD.sunDir, ctr = [360, 20, 0];
+  const view = m4.lookAt(v3.madd(ctr, L, 3000), ctr, [0, 1, 0]);
+  let mn = [1e9, 1e9, 1e9], mx = [-1e9, -1e9, -1e9];
+  for (const x of [-720, 1450]) for (const y of [-230, 320]) for (const z of [-560, 620]) {
+    const p = m4.xform(view, [x, y, z]);
+    mn = mn.map((v, i) => Math.min(v, p[i])); mx = mx.map((v, i) => Math.max(v, p[i]));
+  }
+  SHADOW.vp = m4.mul(m4.ortho(mn[0], mx[0], mn[1], mx[1], -mx[2] - 50, -mn[2] + 50), view);
+}
+
+// =====================================================================
+//  10. Scene drawing
+// =====================================================================
+let solidProg, shadowProg;
+function setInstanceIdentity() {
+  gl.vertexAttrib4f(3, 1, 0, 0, 0); gl.vertexAttrib4f(4, 0, 1, 0, 0);
+  gl.vertexAttrib4f(5, 0, 0, 1, 0); gl.vertexAttrib4f(6, 0, 0, 0, 1);
+  gl.vertexAttrib4f(7, 0, 0, 0, 0);
+}
+function drawList(list) {
+  for (const d of list) {
+    if (d.hidden) continue;
+    if (d.mesh) {
+      gl.bindVertexArray(d.mesh.vao);
+      setInstanceIdentity();
+      gl.drawElements(gl.TRIANGLES, d.mesh.count, gl.UNSIGNED_INT, 0);
+    } else if (d.inst && d.inst.instances > 0) {
+      gl.bindVertexArray(d.inst.vao);
+      gl.drawElementsInstanced(gl.TRIANGLES, d.inst.count, gl.UNSIGNED_INT, 0, d.inst.instances);
+    }
+  }
+  gl.bindVertexArray(null);
+}
+const gateFlash = new Float32Array(12);
+const lineUniform = new Float32Array(LINE_LIN.flat());
+function renderShadow() {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, SHADOW.fbo);
+  gl.viewport(0, 0, SHADOW.size, SHADOW.size);
+  gl.clearDepth(1); gl.clear(gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LESS); gl.depthMask(true);
+  gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(2.0, 3.0);
+  gl.useProgram(shadowProg.p);
+  gl.uniformMatrix4fv(shadowProg.u.uLightVP, false, SHADOW.vp);
+  drawList(ST.draws);
+  gl.disable(gl.POLYGON_OFFSET_FILL);
+}
+function renderSolids(load) {
+  gl.useProgram(solidProg.p);
+  const u = solidProg.u;
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_CUBE_MAP, envCube); gl.uniform1i(u.uEnv, 0);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_CUBE_MAP, irrCube); gl.uniform1i(u.uIrr, 1);
+  gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, SHADOW.tex); gl.uniform1i(u.uShadow, 2);
+  gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, ST.signTex); gl.uniform1i(u.uSigns, 3);
+  gl.uniformMatrix4fv(u.uLightVP, false, SHADOW.vp);
+  gl.uniform2f(u.uShadowTexel, 1 / SHADOW.size, 1 / SHADOW.size);
+  gl.uniform3fv(u.uLine, lineUniform);
+  gl.uniform1fv(u.uGate, gateFlash);
+  // fin light: colour follows the black-body temperature, intensity ~ T^4
+  const T = finTemp(load), I = 0.05 * Math.pow(T / 650, 5.2);
+  const g = 0.52 * smoothstep(520, 2300, T) + 0.03, b = 0.24 * smoothstep(1100, 2600, T);
+  gl.uniform4f(u.uHeat, I * 1.0, I * g, I * b, 1.0);
+  gl.uniform4f(u.uDyn, SIM.corePulse || 0, SIM.terminalGlow || 0, 0, 0);
+  gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LESS); gl.depthMask(true);
+  drawList(ST.draws);
+}
+
+// ---------------------------------------------------------------------
+//  Route glow: camera-facing ribbons that keep each line readable as a
+//  route-map stroke at any distance (min width in pixels).
+// ---------------------------------------------------------------------
+const RIBBON_VS = `
+layout(location=0) in vec3 aPos;
+layout(location=1) in vec3 aTan;
+layout(location=2) in vec2 aSide;   // x: -1/+1 side, y: line index
+uniform float uMinPx, uWorldW;
+out float vSide; flat out int vLine; out float vFade;
+void main() {
+  vec4 c0 = uViewProj * vec4(aPos, 1.0);
+  vec4 c1 = uViewProj * vec4(aPos + aTan * 4.0, 1.0);
+  vLine = int(aSide.y + 0.5); vSide = aSide.x; vFade = 1.0;
+  if (c0.w < 0.5 || c1.w < 0.5) { gl_Position = vec4(0.0, 0.0, 2.0, 1.0); return; }
+  vec2 s0 = c0.xy / c0.w, s1 = c1.xy / c1.w;
+  vec2 d = (s1 - s0) * uRes.xy;
+  vec2 dir = length(d) > 1e-5 ? normalize(d) : vec2(1.0, 0.0);
+  vec2 nrm = vec2(-dir.y, dir.x);
+  float worldPx = uWorldW * uProj[1][1] * uRes.y * 0.5 / c0.w;
+  float px = max(worldPx, uMinPx);
+  vFade = clamp(uMinPx / max(worldPx, 1e-3), 0.35, 1.0);
+  c0.xy += nrm * aSide.x * px / uRes.xy * 2.0 * c0.w;
+  gl_Position = c0;
+}`;
+const RIBBON_FS = `
+in float vSide; flat in int vLine; in float vFade;
+uniform vec3 uLine[4];
+uniform float uGain;
+out vec4 o;
+void main() {
+  float a = exp(-vSide * vSide * 3.5);
+  o = vec4(uLine[vLine] * a * uGain * vFade, 1.0);
+}`;
+let ribbonProg = null;
+function buildRibbons(list) {
+  // list: [{frames: [{p,T}], line, lift}]
+  const v = [], idx = [];
+  let n = 0;
+  for (const L of list) {
+    const fr = L.frames;
+    for (let i = 0; i < fr.length; i++) {
+      const F = fr[i], p = [F.p[0], F.p[1] + (L.lift || 0), F.p[2]];
+      for (const sd of [-1, 1]) v.push(p[0], p[1], p[2], F.T[0], F.T[1], F.T[2], sd, L.line);
+      if (i > 0) idx.push(n - 2, n - 1, n + 1, n - 2, n + 1, n);
+      n += 2;
+    }
+  }
+  const vao = gl.createVertexArray();
+  gl.bindVertexArray(vao);
+  const vb = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, vb);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(v), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 32, 0);
+  gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 32, 12);
+  gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 2, gl.FLOAT, false, 32, 24);
+  const ib = gl.createBuffer();
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(idx), gl.STATIC_DRAW);
+  gl.bindVertexArray(null);
+  return { vao, count: idx.length };
+}
+function renderRibbons(gain, minPx) {
+  if (!ST.ribbons) return;
+  gl.useProgram(ribbonProg.p);
+  gl.uniform3fv(ribbonProg.u.uLine, lineUniform);
+  gl.uniform1f(ribbonProg.u.uGain, gain);
+  gl.uniform1f(ribbonProg.u.uMinPx, minPx * (RT.h / 1080));
+  gl.uniform1f(ribbonProg.u.uWorldW, 1.4);
+  gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(false);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+  gl.bindVertexArray(ST.ribbons.vao);
+  gl.drawElements(gl.TRIANGLES, ST.ribbons.count, gl.UNSIGNED_INT, 0);
+  gl.bindVertexArray(null);
+  gl.disable(gl.BLEND); gl.depthMask(true);
+}
+const finTemp = (load) => 650 + 600 * load + 600 * Math.max(0, load - 1);
+const SIM = { load: 0.45, corePulse: 0, terminalGlow: 0 };
+
+// =====================================================================
+//  11. Final composite (tone mapping). Bloom and grading arrive in M5.
 // =====================================================================
 const COMPOSITE_FS = `
 in vec2 vUV;
@@ -791,15 +2121,15 @@ void main() {
 let compProg;
 
 // =====================================================================
-//  7. Camera (orbit with inertia; the full controller arrives in M4)
+//  12. Camera (orbit with inertia; the full controller arrives in M4)
 // =====================================================================
 const cam = {
-  target: [250, 0, 0], dist: 1490, yaw: 0.245, pitch: 0.26, fov: 45 * Math.PI / 180,
+  target: [280, -10, 20], dist: 1150, yaw: 0.30, pitch: 0.24, fov: 45 * Math.PI / 180,
   vYaw: 0, vPitch: 0, vZoom: 0,
   eye: [0, 0, 0], view: null, proj: null,
 };
 const SHOTS = {
-  hero:   { target: [250, 0, 0], dist: 1490, yaw: 0.245, pitch: 0.26 },
+  hero:   { target: [280, -10, 20], dist: 1150, yaw: 0.30, pitch: 0.24 },
   planet: { target: [-200, 0, 0], dist: 900, yaw: 1.35, pitch: 0.06 },
   deep:   { target: [700, 60, 0], dist: 900, yaw: -1.75, pitch: 0.12 },
   gate:   { target: [1080, 90, -400], dist: 260, yaw: 0.9, pitch: 0.12 },
@@ -841,7 +2171,7 @@ canvas.addEventListener('pointerup', endDrag); canvas.addEventListener('pointerc
 canvas.addEventListener('wheel', (e) => { e.preventDefault(); cam.vZoom += clamp(e.deltaY, -120, 120) * 0.012; }, { passive: false });
 
 // =====================================================================
-//  8. Frame setup & main loop
+//  13. Frame setup & main loop
 // =====================================================================
 function resize() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -872,7 +2202,7 @@ function writeFrame(t) {
   put(1.0, 0.955, 0.9, EXPOSURE);                                     // sun colour, exposure
   put(WORLD.planetDir[0], WORLD.planetDir[1], WORLD.planetDir[2], (t % 2400) / 2400 * Math.PI * 2);
   put(w, h, 1 / w, 1 / h);
-  put(0.45, 900, (t % 1000) * 0.2, (t % 1500) / 1500 * Math.PI * 2 + 0.7);
+  put(SIM.load, finTemp(SIM.load), (t % 1000) * (0.25 + 0.5 * SIM.load), (t % 1500) / 1500 * Math.PI * 2 + 0.7);
   put(HI() ? 1 : 0, HI() ? 16 : 8, HI() ? 6 : 3, HI() ? 9 : 6);
   put(near, far, 0, PLANET_DIST);
   gl.bindBuffer(gl.UNIFORM_BUFFER, frameUBO);
@@ -889,15 +2219,21 @@ function frame() {
   const t = nowS();
   writeFrame(t);
 
+  renderShadow();
+
   gl.bindFramebuffer(gl.FRAMEBUFFER, RT.hdrFBO);
   gl.viewport(0, 0, RT.w, RT.h);
   gl.clearColor(0, 0, 0, 1);
   gl.clearDepth(1);
   gl.depthMask(true);
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.disable(gl.BLEND);
 
-  // background (planet + sky) at the far plane
-  gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND);
+  // the station
+  renderSolids(SIM.load);
+
+  // background (planet + sky) only where nothing was drawn
+  gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(false);
   gl.useProgram(bgProg.p);
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_CUBE_MAP, skyCube);
   gl.uniform1i(bgProg.u.uSky, 0);
@@ -909,6 +2245,9 @@ function frame() {
   gl.bindVertexArray(starVAO);
   gl.drawArrays(gl.POINTS, 0, starCount);
   gl.disable(gl.BLEND);
+  gl.depthMask(true);
+  renderRibbons(1.6, 2.2);
+  gl.disable(gl.DEPTH_TEST);
 
   // composite to screen
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -919,12 +2258,12 @@ function frame() {
   drawFullscreen();
 
   frames++;
-  if (frames === 2) { window.__ready = true; }
+  if (frames === 2) { window.__ready = true; window.__stats = ST.stats; }
   requestAnimationFrame(frame);
 }
 
 // =====================================================================
-//  9. Boot sequence (spread over frames so the loading bar moves)
+//  14. Boot sequence (spread over frames so the loading bar moves)
 // =====================================================================
 function setLoad(frac, text) {
   $('loadbar').style.width = Math.round(frac * 100) + '%';
@@ -932,11 +2271,16 @@ function setLoad(frac, text) {
 }
 const bootSteps = [
   ['編譯著色器 Compiling shaders', () => {
-    bgProg = program('background', FULLSCREEN_VS, BG_FS);
+    bgProg = program('background', BG_VS, BG_FS, ({ noclouds: '#define CLOUDS 0.0', nomie: '#define MIE_K 0.0' })[QS.get('dbg')] || '');
+    solidProg = program('solid', SOLID_VS, SOLID_FS, '#define QUALITY_HIGH ' + (HI() ? 1 : 0));
+    shadowProg = program('shadow', SOLID_VS, SHADOW_FS, '#define SHADOW 1');
+    ribbonProg = program('ribbon', RIBBON_VS, RIBBON_FS);
     compProg = program('composite', FULLSCREEN_VS, COMPOSITE_FS);
     buildStars();
   }],
+  ['建造太空站 Building the station', () => { buildStation(); setupShadow(); }],
   ['烘焙星空 Baking the sky', function* () { yield* bakeSky(); }],
+  ['烘焙環境光 Baking planet light', () => { resize(); updateCamera(0); writeFrame(nowS()); bakeEnvironment(); }],
 ];
 async function boot() {
   const total = bootSteps.length + 5;
