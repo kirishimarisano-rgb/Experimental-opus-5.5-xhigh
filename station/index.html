@@ -773,7 +773,7 @@ void main() {
 const MAT = {
   HULL: 0, TRUSS: 1, GUIDE: 2, MLI: 3, WAFER: 4, FIN: 5, GLASS: 6, HAB: 7, STRIPE: 8,
   CONTAINER: 9, TRAIN: 10, DISH: 11, EMIS: 12, COREGLOW: 13, DARK: 14, SOLAR: 15,
-  RING: 16, SIGN: 17, FIBER: 18, RAIL: 19, PLATFORM: 20,
+  RING: 16, SIGN: 17, FIBER: 18, RAIL: 19, PLATFORM: 20, LAMP: 21,
 };
 // line index: 0 cargo, 1 passenger, 2 data, 3 comms
 const LINE_HEX = ['#FFA41B', '#36C9FF', '#A070FF', '#3DF2A0'];
@@ -1142,9 +1142,32 @@ Mat material(int id, float e) {
     m.albedo = tint * corr; m.rough = 0.6; m.metal = 0.15;
     float band = step(abs(lp.y - 0.4), 0.18) * step(0.5, vParam.w);
     m.albedo = mix(m.albedo, vec3(0.62, 0.6, 0.55), band);
-  } else if (id == 10) {                           // TRAIN hull (colour/lines in M3)
-    vec2 pn = panels(uv, vec2(4.0, 1.6), 0.03);
-    m.albedo = vec3(0.66, 0.66, 0.64) * (0.9 + 0.1 * pn.y) * (0.8 + 0.2 * pn.x); m.rough = 0.35;
+  } else if (id == 10) {                           // TRAIN: e = line (0 cargo loco, 1 passenger car)
+    int li = int(e + 0.5);
+    if (li == 1) {
+      float x = vAttr.y, h = vAttr.z;
+      vec2 pn = panels(vec2(x, h), vec2(3.6, 1.1), 0.025);
+      m.albedo = vec3(0.70, 0.70, 0.68) * (0.93 + 0.07 * pn.y) * (0.86 + 0.14 * pn.x); m.rough = 0.3;
+      float side = step(0.5, abs(vLN.z));
+      float win = side * step(2.3, h) * step(h, 3.35);
+      float cell = floor(x / 1.7);
+      float mull = step(0.14, fract(x / 1.7));
+      float lit = 0.35 + 0.65 * step(0.18, hash12(vec2(cell, vParam.y * 91.0 + 3.0)));
+      m.emis += vec3(1.0, 0.82, 0.6) * win * mull * lit * 2.0;
+      m.albedo *= 1.0 - 0.92 * win;
+      m.rough = mix(m.rough, 0.05, win); m.metal = mix(m.metal, 0.8, win);
+      m.emis += uLine[1] * side * step(abs(h - 1.75), 0.09) * 2.6;
+      float dx = abs(abs(x) - 5.5), inDoor = side * step(dx, 0.9) * step(0.95, h) * step(h, 3.5);
+      float edge = inDoor * (1.0 - step(dx, 0.83) * step(1.02, h) * step(h, 3.43));
+      m.albedo *= 1.0 - 0.5 * edge;
+      m.emis += vec3(1.0, 0.86, 0.66) * (edge * 3.0 + inDoor * 0.6) * vParam.x;
+    } else {
+      vec2 pn = panels(uv, vec2(3.0, 1.4), 0.03);
+      m.albedo = vec3(0.30, 0.31, 0.32) * (0.85 + 0.15 * pn.y) * (0.8 + 0.2 * pn.x); m.rough = 0.45; m.metal = 0.5;
+      float haz = step(6.8, lp.x) * step(0.5, fract((lp.x + lp.y + lp.z * 0.0) * 0.55));
+      m.albedo = mix(m.albedo, vec3(0.75, 0.42, 0.04), haz);
+      m.emis += uLine[0] * step(abs(lp.y - 4.2), 0.12) * step(2.45, abs(lp.z)) * step(lp.x, 6.5) * 2.4;
+    }
   } else if (id == 11) {                           // DISH: white composite
     m.albedo = vec3(0.62, 0.62, 0.6); m.rough = 0.4;
     float rings = smoothstep(0.02, 0.0, abs(fract(vAttr.z / 6.0) - 0.5) - 0.47);
@@ -1180,6 +1203,9 @@ Mat material(int id, float e) {
     m.emis = uLine[li] * (0.35 + 0.25 * sin(vAttr.y * 0.08 - uCam.w * 6.0));
   } else if (id == 19) {                           // RAIL: polished magnet rail
     m.albedo = vec3(0.55, 0.56, 0.58); m.metal = 1.0; m.rough = 0.22;
+  } else if (id == 21) {                           // LAMP: 0 white head lamp, 1 red tail
+    m.albedo = vec3(0.02);
+    m.emis = e < 0.5 ? vec3(1.0, 0.96, 0.9) * 9.0 : vec3(1.0, 0.1, 0.04) * 5.0;
   } else if (id == 20) {                           // PLATFORM deck plating
     vec2 pn = panels(uv, vec2(6.0, 6.0), 0.06);
     m.albedo = vec3(0.16, 0.165, 0.17) * (0.8 + 0.25 * pn.y) * (0.75 + 0.25 * pn.x); m.rough = 0.7; m.metal = 0.2;
@@ -1718,7 +1744,7 @@ function buildStation() {
     }
     for (const a of [a0, a1]) {
       const nr = [-Math.sin(a) * (a === a0 ? -1 : 1), 0, Math.cos(a) * (a === a0 ? -1 : 1)];
-      S.panel(col(r0, a, y0), col(r1, a, y0), col(r1, a, y1), col(r0, a, y1), nr, MAT.HULL);
+      S.panel(col(r0, a, y0), col(r1, a, y0), col(r1, a, y1), col(r0, a, y1), nr, MAT.GLASS, [[0, 0], [r1 - r0, 0], [r1 - r0, y1 - y0], [0, y1 - y0]], 2);
     }
     // platform edge along the track
     for (let i = 0; i < 24; i++) {
@@ -1798,10 +1824,6 @@ function buildStation() {
     ST.cranes = [];
     for (const aD of [127, 143]) {
       const th = aD * DEG, X = [Math.cos(th), 0, Math.sin(th)], Z = [-Math.sin(th), 0, Math.cos(th)];
-      const legs = [polar(316, th, DY), polar(556, th, DY)];
-      for (const L of legs) for (const s of [-6, 6]) { const bot = v3.madd(L, Z, s); I.dark.beam(bot, [bot[0], -58, bot[2]], 2.2, 2.2, [1, 0, 0]); }
-      I.hull.add(polar(436, th, -54), X, [0, 1, 0], Z, 250, 7, 14);
-      I.mli.add(polar(372, th, -60), X, [0, 1, 0], Z, 12, 6, 16);
       ST.cranes.push(th);
     }
     // floodlight masts
@@ -2121,6 +2143,638 @@ void main() {
 let compProg;
 
 // =====================================================================
+//  15. Trains and timetable (design doc §7). Everything is a function of
+//      station time, so every visitor sees the same train in the same place.
+// =====================================================================
+/** Uniformly resampled polyline with arc-length lookup. */
+class Track {
+  constructor(pts, ds = 2) {
+    const cum = [0];
+    for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + v3.dist(pts[i], pts[i - 1]));
+    this.len = cum[cum.length - 1];
+    this.ds = ds;
+    const n = Math.floor(this.len / ds) + 1;
+    this.p = new Float32Array(n * 3);
+    let j = 0;
+    for (let i = 0; i < n; i++) {
+      const s = i * ds;
+      while (j < pts.length - 2 && cum[j + 1] < s) j++;
+      const t = clamp((s - cum[j]) / Math.max(1e-6, cum[j + 1] - cum[j]), 0, 1);
+      const q = v3.lerp(pts[j], pts[j + 1], t);
+      this.p[i * 3] = q[0]; this.p[i * 3 + 1] = q[1]; this.p[i * 3 + 2] = q[2];
+    }
+    this.n = n;
+  }
+  at(s) {
+    const f = clamp(s / this.ds, 0, this.n - 1.001), i = Math.floor(f), t = f - i, P = this.p;
+    return [P[i * 3] + (P[i * 3 + 3] - P[i * 3]) * t, P[i * 3 + 1] + (P[i * 3 + 4] - P[i * 3 + 1]) * t, P[i * 3 + 2] + (P[i * 3 + 5] - P[i * 3 + 2]) * t];
+  }
+  nearest(q) { let best = 0, bd = 1e18; for (let i = 0; i < this.n; i++) { const d = (this.p[i * 3] - q[0]) ** 2 + (this.p[i * 3 + 2] - q[2]) ** 2; if (d < bd) { bd = d; best = i; } } return best * this.ds; }
+}
+function hermite(p0, m0, p1, m1, n) {
+  const out = [];
+  for (let i = 0; i <= n; i++) {
+    const t = i / n, t2 = t * t, t3 = t2 * t;
+    const h00 = 2 * t3 - 3 * t2 + 1, h10 = t3 - 2 * t2 + t, h01 = -2 * t3 + 3 * t2, h11 = t3 - t2;
+    out.push([0, 1, 2].map((k) => h00 * p0[k] + h10 * m0[k] + h01 * p1[k] + h11 * m1[k]));
+  }
+  return out;
+}
+
+const DESTS = {
+  0: [['外環礦帶', 'Outer Belt Depot'], ['冰衛星補給場', 'Ice Moon Yard'], ['三號船塢', 'Dock Three'], ['赫爾曼碎石場', 'Hermann Quarry']],
+  1: [['環帶學研城', 'Halo Campus'], ['第七觀測站', 'Outpost Seven'], ['泊灣中繼港', 'Berth Harbor'], ['靜海研究環', 'Quiet Sea Ring']],
+  2: [['深空觀測陣列', 'Deep Array'], ['遠場感測網', 'Far-field Mesh']],
+  3: [['深空中繼', 'Relay-9'], ['遠航艦隊', 'Long-range Fleet'], ['外環礦帶', 'Outer Belt Depot']],
+};
+
+const LINE_CFG = [
+  { // C: long, heavy, slow
+    key: 'C', headway: 240, phase: 17, dwell: 60, vFar: 90, vStem: 15, vLoop: 10, aFree: 0.8, aSt: 0.28,
+    platform: [-240.4, -100, 240.4], cars: 12, carLen: 18, locoLen: 26, gap: 1.2,
+    approach: [6800, 420, 900], depart: [6800, 260, 1400],
+  },
+  { // P: short, fast, lit windows, on time
+    key: 'P', headway: 120, phase: 41, dwell: 20, vFar: 220, vStem: 40, vLoop: 25, aFree: 4.0, aSt: 1.3,
+    platform: [-250, 90, 0], cars: 4, carLen: 22, locoLen: 0, gap: 0.8,
+    approach: [7200, 700, -1300], depart: [7200, 900, -600],
+  },
+];
+const SIMLINES = [];
+function buildTimetable() {
+  for (let li = 0; li < 2; li++) {
+    const cfg = LINE_CFG[li], L = ST.lines[li], fr = L.frames;
+    const station = fr.map((F) => F.p);
+    const first = station[0], last = station[station.length - 1];
+    const a0 = v3.add(first, cfg.approach);
+    const app = hermite(a0, [-5200, -cfg.approach[1] * 0.4, -cfg.approach[2] * 0.8], first, [-2600, 0, 0], 220);
+    const d1 = v3.add(last, cfg.depart);
+    const dep = hermite(last, [2600, 0, 0], d1, [5200, cfg.depart[1] * 0.6, cfg.depart[2] * 0.4], 220);
+    const pts = app.concat(station.slice(1), dep.slice(1));
+    const tr = new Track(pts, 2);
+    const sGateIn = hermiteLen(app), sGateOut = sGateIn + fr[fr.length - 1].s;
+    const trainLen = cfg.locoLen + cfg.cars * (cfg.carLen + cfg.gap);
+    const sStop = sGateIn + nearestS(fr, cfg.platform) + trainLen / 2;
+    // velocity profile over the whole route (forward/backward passes with accel limits)
+    const n = tr.n, v = new Float32Array(n), acc = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const s = i * tr.ds, p = tr.at(s);
+      const free = s < sGateIn || s > sGateOut;
+      const inLoop = !free && Math.hypot(p[0], p[2]) < (li === 0 ? 352 : 262);
+      v[i] = free ? cfg.vFar : (inLoop ? cfg.vLoop : cfg.vStem);
+      acc[i] = free ? cfg.aFree : cfg.aSt;
+    }
+    const iStop = Math.round(sStop / tr.ds);
+    v[iStop] = 0; v[0] = cfg.vFar; v[n - 1] = cfg.vFar;
+    for (let i = n - 2; i >= 0; i--) v[i] = Math.min(v[i], Math.sqrt(v[i + 1] * v[i + 1] + 2 * acc[i] * tr.ds));
+    for (let i = 1; i < n; i++) if (i !== iStop) v[i] = Math.min(v[i], Math.sqrt(v[i - 1] * v[i - 1] + 2 * acc[i] * tr.ds));
+    const t = new Float32Array(n);
+    for (let i = 1; i < n; i++) {
+      t[i] = t[i - 1] + tr.ds / Math.max(0.5 * (v[i] + v[i - 1]), 0.25);
+      if (i === iStop + 1) t[i] += cfg.dwell;
+    }
+    const tAt = (s) => { const f = clamp(s / tr.ds, 0, n - 1.001), i = Math.floor(f); return t[i] + (t[i + 1] - t[i]) * (f - i); };
+    SIMLINES[li] = {
+      cfg, li, tr, t, v, n, iStop, sGateIn, sGateOut, sStop, trainLen,
+      total: t[n - 1],
+      tCapture: tAt(sGateIn), tStop: t[iStop], tDepart: t[iStop] + cfg.dwell, tRelease: tAt(sGateOut + trainLen),
+      tAt,
+    };
+  }
+  function hermiteLen(p) { let L = 0; for (let i = 1; i < p.length; i++) L += v3.dist(p[i], p[i - 1]); return L; }
+  function nearestS(frames, q) { let best = 0, bd = 1e18; for (const F of frames) { const d = (F.p[0] - q[0]) ** 2 + (F.p[2] - q[2]) ** 2; if (d < bd) { bd = d; best = F.s; } } return best; }
+}
+/** Head arc length for a journey time tau (seconds since the train appeared). */
+function sOfTau(SL, tau) {
+  const t = SL.t;
+  if (tau <= 0) return 0;
+  if (tau >= SL.total) return SL.tr.len;
+  let lo = 0, hi = SL.n - 1;
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (t[m] <= tau) lo = m; else hi = m; }
+  const f = (tau - t[lo]) / Math.max(1e-6, t[hi] - t[lo]);
+  return (lo + clamp(f, 0, 1)) * SL.tr.ds;
+}
+/** Trains of line li currently in the world: [{n, tau, s}]. */
+function activeTrains(SL, t) {
+  const H = SL.cfg.headway, out = [];
+  const nMax = Math.floor((t - SL.cfg.phase) / H), nMin = Math.ceil((t - SL.cfg.phase - SL.total) / H);
+  for (let n = nMin; n <= nMax; n++) {
+    const tau = t - (n * H + SL.cfg.phase);
+    if (tau >= 0 && tau <= SL.total) out.push({ n, tau, s: sOfTau(SL, tau) });
+  }
+  return out;
+}
+const trainNo = (li, n) => (li === 0 ? 'C' : 'P') + String(((n % 900) + 900) % 900 + 100);
+const trainDest = (li, n) => DESTS[li][((n % DESTS[li].length) + DESTS[li].length) % DESTS[li].length];
+
+// ---------------------------------------------------------------------
+//  Train meshes
+// ---------------------------------------------------------------------
+function roundRect(w, h, r, n = 3) {
+  // counter-clockwise rounded rectangle centred at (0, h/2)
+  const pts = [];
+  const corners = [[w / 2 - r, r, -Math.PI / 2], [w / 2 - r, h - r, 0], [-w / 2 + r, h - r, Math.PI / 2], [-w / 2 + r, r, Math.PI]];
+  for (const [cx, cy, a0] of corners) for (let i = 0; i <= n; i++) { const a = a0 + i / n * Math.PI / 2; pts.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]); }
+  return pts;
+}
+/** Car body swept along X with a per-station scale (nose taper). e = line index. */
+function carBody(b, len, prof, scaleAt, mat, e) {
+  const frames = [];
+  const N = 28;
+  for (let i = 0; i <= N; i++) {
+    const x = -len / 2 + len * i / N;
+    frames.push({ x, s: scaleAt(x) });
+  }
+  // sweep with smooth normals around the profile
+  const P = prof.length;
+  const rows = [];
+  for (const F of frames) {
+    const row = [];
+    for (let k = 0; k <= P; k++) {
+      const q = prof[k % P], qa = prof[(k - 1 + P) % P], qb = prof[(k + 1) % P];
+      const tx = qb[0] - qa[0], ty = qb[1] - qa[1], tl = Math.hypot(tx, ty) || 1;
+      const nz = ty / tl, ny = -tx / tl;
+      const sy = F.s[1], sz = F.s[0];
+      row.push(b.vert([F.x, (q[1] - 0.0) * sy + F.s[2], q[0] * sz], v3.norm([F.s[3] || 0, ny, nz]), mat, F.x, q[1], e));
+    }
+    rows.push(row);
+  }
+  for (let i = 0; i < rows.length - 1; i++) for (let k = 0; k < P; k++) b.quad(rows[i][k], rows[i + 1][k], rows[i + 1][k + 1], rows[i][k + 1]);
+  // end caps
+  for (const [ri, sx] of [[0, -1], [rows.length - 1, 1]]) {
+    const F = frames[ri];
+    const c = b.vert([F.x, 2.2 * F.s[1] + F.s[2], 0], [sx, 0, 0], mat, F.x, 2, e);
+    const ring = prof.map((q) => b.vert([F.x, q[1] * F.s[1] + F.s[2], q[0] * F.s[0]], [sx, 0, 0], mat, F.x, q[1], e));
+    for (let k = 0; k < P; k++) b.tri(c, ring[k], ring[(k + 1) % P]);
+  }
+}
+function buildTrainProtos() {
+  const T = {};
+  // passenger cars: 22 m, rounded section, nose taper on the leading end
+  const prof = roundRect(4.2, 4.4, 1.3, 4);
+  {
+    const b = new MeshBuilder();
+    carBody(b, 21.4, prof, (x) => {
+      const t = smoothstep(4.5, 10.7, x);
+      const s = 1 - 0.72 * t * t;
+      return [lerp(1, 0.55, t), s, 0.9 + 1.25 * t * t, 0.9 * t];
+    }, MAT.TRAIN, 1);
+    for (const x of [-7, 6]) b.box([x, 0.55, 0], [1.6, 0.5, 1.6], [1, 0, 0], [0, 1, 0], [0, 0, 1], MAT.DARK);
+    b.box([10.75, 2.35, 0], [0.12, 0.28, 0.9], [1, 0, 0], [0, 1, 0], [0, 0, 1], MAT.LAMP, 0);
+    T.paxEnd = b.upload();
+  }
+  {
+    const b = new MeshBuilder();
+    carBody(b, 21.4, prof, (x) => { const t = smoothstep(9.8, 10.7, Math.abs(x)); return [1 - 0.08 * t, 1 - 0.06 * t, 0.9, 0]; }, MAT.TRAIN, 1);
+    for (const x of [-7, 7]) b.box([x, 0.55, 0], [1.6, 0.5, 1.6], [1, 0, 0], [0, 1, 0], [0, 0, 1], MAT.DARK);
+    T.paxMid = b.upload();
+  }
+  // cargo locomotive: 26 m, dark hull, wedge nose, amber light bar
+  {
+    const b = new MeshBuilder();
+    b.box([-3, 3.1, 0], [10, 2.2, 2.6], [1, 0, 0], [0, 1, 0], [0, 0, 1], MAT.TRAIN, 0);
+    // wedge nose
+    const x0 = 7, x1 = 13, yb = 0.9, yt = 5.3, yn = 2.1, hw = 2.6, hn = 2.0;
+    const q = [[x0, yb, -hw], [x0, yb, hw], [x0, yt, hw], [x0, yt, -hw], [x1, yb, -hn], [x1, yb, hn], [x1, yn, hn], [x1, yn, -hn]];
+    const nTop = v3.norm([yt - yn, x1 - x0, 0]);
+    b.panel(q[3], q[2], q[6], q[7], nTop, MAT.TRAIN, [[0, 0], [1, 0], [1, 1], [0, 1]], 0);
+    b.panel(q[4], q[5], q[6], q[7], [1, 0, 0], MAT.TRAIN, [[0, 0], [1, 0], [1, 1], [0, 1]], 0);
+    b.panel(q[1], q[5], q[6], q[2], [0, 0, 1], MAT.TRAIN, [[0, 0], [1, 0], [1, 1], [0, 1]], 0);
+    b.panel(q[0], q[3], q[7], q[4], [0, 0, -1], MAT.TRAIN, [[0, 0], [1, 0], [1, 1], [0, 1]], 0);
+    b.panel(q[0], q[4], q[5], q[1], [0, -1, 0], MAT.DARK);
+    b.box([12.9, 1.75, 0], [0.15, 0.22, 1.7], [1, 0, 0], [0, 1, 0], [0, 0, 1], MAT.STRIPE, 0);
+    b.box([12.95, 1.2, 1.3], [0.12, 0.2, 0.3], [1, 0, 0], [0, 1, 0], [0, 0, 1], MAT.LAMP, 0);
+    b.box([12.95, 1.2, -1.3], [0.12, 0.2, 0.3], [1, 0, 0], [0, 1, 0], [0, 0, 1], MAT.LAMP, 0);
+    b.box([-3, 5.6, 0], [6, 0.35, 1.4], [1, 0, 0], [0, 1, 0], [0, 0, 1], MAT.DARK);
+    for (const x of [-9, 3]) b.box([x, 0.55, 0], [2.2, 0.5, 1.7], [1, 0, 0], [0, 1, 0], [0, 0, 1], MAT.DARK);
+    T.loco = b.upload();
+  }
+  // cargo flatcar (containers are separate instances so each has its own colour)
+  {
+    const b = new MeshBuilder();
+    b.box([0, 1.25, 0], [8.8, 0.35, 1.8], [1, 0, 0], [0, 1, 0], [0, 0, 1], MAT.DARK);
+    for (const z of [-1.8, 1.8]) b.box([0, 1.25, z], [8.8, 0.5, 0.12], [1, 0, 0], [0, 1, 0], [0, 0, 1], MAT.TRAIN, 0);
+    for (const x of [-6, 6]) b.box([x, 0.55, 0], [1.5, 0.45, 1.5], [1, 0, 0], [0, 1, 0], [0, 0, 1], MAT.DARK);
+    b.box([8.7, 1.3, 0], [0.12, 0.2, 1.7], [1, 0, 0], [0, 1, 0], [0, 0, 1], MAT.STRIPE, 0);
+    T.flat = b.upload();
+  }
+  // maintenance drone
+  {
+    const b = new MeshBuilder();
+    b.box([0, 0, 0], [1.6, 0.6, 1.0], [1, 0, 0], [0, 1, 0], [0, 0, 1], MAT.HULL);
+    for (const [x, z] of [[1.3, 1.3], [1.3, -1.3], [-1.3, 1.3], [-1.3, -1.3]]) b.box([x, 0.2, z], [0.6, 0.15, 0.6], [1, 0, 0], [0, 1, 0], [0, 0, 1], MAT.DARK);
+    b.box([0, -0.2, 0], [1.9, 0.12, 0.3], [1, 0, 0], [0, 1, 0], [0, 0, 1], MAT.MLI);
+    T.drone = b.upload();
+  }
+  T.box = protoBox(MAT.CONTAINER);
+  T.dark = protoBox(MAT.DARK);
+  T.hull = protoBox(MAT.HULL);
+  return T;
+}
+
+/** Dynamic instance set with a fixed capacity; call begin(), add()..., commit(). */
+class DynSet {
+  constructor(proto, cap) {
+    this.inst = new Instances();
+    this.cap = cap;
+    this.inst.d = new Array(cap * 20).fill(0);
+    this.inst.n = cap;
+    this.gpu = instanced(proto, this.inst, true);
+    this.data = new Float32Array(cap * 20);
+    this.count = 0;
+  }
+  begin() { this.count = 0; }
+  add(pos, X, Y, Z, sx, sy, sz, param = [0, 0, 0, 0]) {
+    if (this.count >= this.cap) return;
+    const d = this.data, o = this.count * 20;
+    d[o] = X[0] * sx; d[o + 1] = X[1] * sx; d[o + 2] = X[2] * sx; d[o + 3] = 0;
+    d[o + 4] = Y[0] * sy; d[o + 5] = Y[1] * sy; d[o + 6] = Y[2] * sy; d[o + 7] = 0;
+    d[o + 8] = Z[0] * sz; d[o + 9] = Z[1] * sz; d[o + 10] = Z[2] * sz; d[o + 11] = 0;
+    d[o + 12] = pos[0]; d[o + 13] = pos[1]; d[o + 14] = pos[2]; d[o + 15] = 1;
+    d[o + 16] = param[0]; d[o + 17] = param[1]; d[o + 18] = param[2]; d[o + 19] = param[3];
+    this.count++;
+  }
+  commit() {
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.gpu.buf);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.data, 0, this.count * 20);
+    this.gpu.instances = this.count;
+  }
+}
+
+// ---------------------------------------------------------------------
+//  Glow sprites and streaks (engine plumes, lamps, pulses, the beam)
+// ---------------------------------------------------------------------
+const SPRITE_VS = `
+layout(location=0) in vec2 aCorner;
+layout(location=1) in vec4 iA;   // p0 (head), width in metres
+layout(location=2) in vec4 iB;   // p1 (tail), intensity
+layout(location=3) in vec4 iC;   // colour, tail taper
+layout(location=4) in vec4 iD;   // blink period, phase, duty, min px
+out vec3 vPx; out vec3 vInfo; out vec3 vCol;
+void main() {
+  vec4 c0 = uViewProj * vec4(iA.xyz, 1.0), c1 = uViewProj * vec4(iB.xyz, 1.0);
+  float blink = 1.0;
+  if (iD.x > 0.0) blink = step(fract(uCam.w / iD.x + iD.y), iD.z);
+  const float WN = 0.5;
+  if ((c0.w < WN && c1.w < WN) || blink < 0.5 || iB.w <= 0.0) { gl_Position = vec4(0.0, 0.0, 2.0, 1.0); return; }
+  // clip long streaks against the near plane instead of dropping them
+  if (c1.w < WN) c1 = mix(c0, c1, (c0.w - WN) / (c0.w - c1.w));
+  if (c0.w < WN) c0 = mix(c1, c0, (c1.w - WN) / (c1.w - c0.w));
+  vec2 hr = uRes.xy * 0.5;
+  vec2 s0 = c0.xy / c0.w * hr, s1 = c1.xy / c1.w * hr;
+  vec2 d = s1 - s0; float len = length(d);
+  vec2 dir = len > 1e-3 ? d / len : vec2(1.0, 0.0), nrm = vec2(-dir.y, dir.x);
+  float k = iA.w * uProj[1][1] * hr.y;
+  float minPx = iD.w > 0.0 ? iD.w : 1.5;
+  float wA = k / c0.w, wB = k / c1.w;
+  float w0 = max(wA, minPx), w1 = max(wB, minPx);
+  float t = aCorner.x * 0.5 + 0.5;
+  vec4 c = mix(c0, c1, t);
+  float w = mix(w0, w1, t);
+  c.xy += (nrm * aCorner.y * w + dir * aCorner.x * w) / hr * c.w;
+  gl_Position = c;
+  float x = t * len + aCorner.x * w;
+  vPx = vec3(x, aCorner.y * w, w) * c.w;
+  vInfo = vec3(len, iC.w, 1.0) * c.w;
+  vInfo.z = c.w;
+  // keep total energy when a sprite is clamped to its minimum pixel size
+  float energy = clamp(mix(wA, wB, t) / w, 0.08, 1.0);
+  vCol = iC.rgb * iB.w * mix(1.0, energy, 0.85);
+  vPx.z = w * c.w;
+}`;
+const SPRITE_FS = `
+in vec3 vPx; in vec3 vInfo; in vec3 vCol;
+out vec4 o;
+void main() {
+  float wq = vInfo.z;
+  vec3 px = vPx / wq; float len = vInfo.x / wq, taper = vInfo.y / wq;
+  float dx = max(0.0, max(-px.x, px.x - len));
+  float d = length(vec2(dx, px.y)) / px.z;
+  float a = exp(-d * d * 3.2) + 0.25 * exp(-d * 1.8) * step(d, 1.0);
+  float along = len > 0.0 ? clamp(px.x / len, 0.0, 1.0) : 0.0;
+  a *= mix(1.0, taper, along);
+  o = vec4(vCol * a, 1.0);
+}`;
+class Sprites {
+  constructor(cap, dynamic) {
+    this.cap = cap; this.count = 0;
+    this.data = new Float32Array(cap * 16);
+    this.vao = gl.createVertexArray();
+    gl.bindVertexArray(this.vao);
+    const q = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, q);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, 1, 1, -1, -1, 1, 1, -1, 1]), gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 8, 0);
+    this.buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.buf);
+    gl.bufferData(gl.ARRAY_BUFFER, this.data.byteLength, dynamic ? gl.DYNAMIC_DRAW : gl.STATIC_DRAW);
+    for (let i = 0; i < 4; i++) {
+      gl.enableVertexAttribArray(1 + i);
+      gl.vertexAttribPointer(1 + i, 4, gl.FLOAT, false, 64, i * 16);
+      gl.vertexAttribDivisor(1 + i, 1);
+    }
+    gl.bindVertexArray(null);
+  }
+  begin() { this.count = 0; }
+  /** head p0, tail p1 (same point for a round glow), width m, colour, intensity, taper, blink [period, phase, duty], minPx */
+  add(p0, p1, w, col, I, taper = 1, blink = null, minPx = 0) {
+    if (this.count >= this.cap) return;
+    const d = this.data, o = this.count++ * 16;
+    d[o] = p0[0]; d[o + 1] = p0[1]; d[o + 2] = p0[2]; d[o + 3] = w;
+    d[o + 4] = p1[0]; d[o + 5] = p1[1]; d[o + 6] = p1[2]; d[o + 7] = I;
+    d[o + 8] = col[0]; d[o + 9] = col[1]; d[o + 10] = col[2]; d[o + 11] = taper;
+    d[o + 12] = blink ? blink[0] : 0; d[o + 13] = blink ? blink[1] : 0; d[o + 14] = blink ? blink[2] : 0; d[o + 15] = minPx;
+  }
+  commit() {
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.buf);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, this.data, 0, this.count * 16);
+  }
+  draw() {
+    if (!this.count) return;
+    gl.bindVertexArray(this.vao);
+    gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, this.count);
+    gl.bindVertexArray(null);
+  }
+}
+let spriteProg = null, fxStatic = null, fx = null;
+const WHITE = [1, 0.96, 0.9], WARM = [1, 0.78, 0.5], RED = [1, 0.1, 0.04];
+
+/** Static lights: gate beacons, deck strobes, track markers, antenna and spire beacons, yard floods. */
+function buildStaticLights() {
+  fxStatic = new Sprites(4096, false);
+  const R = rng(909);
+  for (const G of ST.gates) {
+    for (let r = 0; r < 3; r++) {
+      const c = v3.add(G.c, [r * 40 + (r ? 10 : 0), 0, 0]), Rr = G.R * (1 - r * 0.06) + G.t + 1.2;
+      for (let k = 0; k < 4; k++) {
+        const a = (k + 0.5) * Math.PI / 2, p = v3.add(c, [2.6, Math.cos(a) * Rr, Math.sin(a) * Rr]);
+        fxStatic.add(p, p, 1.6, WHITE, 26, 1, [1.6, r * 0.18 + k * 0.03, 0.08], 2.2);
+      }
+    }
+  }
+  // deck edge strobes
+  for (let k = 0; k < 32; k++) {
+    const th = k / 32 * Math.PI * 2, p = [Math.cos(th) * 394, -170, Math.sin(th) * 394];
+    fxStatic.add(p, p, 1.2, WHITE, 18, 1, [2.4, R(), 0.06], 1.8);
+  }
+  // track side markers every 30 m in line colour (quiet, steady)
+  for (let li = 0; li < 2; li++) {
+    const fr = every(ST.lines[li].frames, 30);
+    for (const F of fr) for (const sd of [-3.1, 3.1]) {
+      const p = v3.add(v3.madd(F.p, F.B, sd), [0, -0.4, 0]);
+      fxStatic.add(p, p, 0.5, LINE_LIN[li], 5, 1, null, 1.1);
+    }
+  }
+  // spire and antenna beacons
+  fxStatic.add([0, 178, 0], [0, 178, 0], 2.2, WHITE, 40, 1, [2.0, 0.5, 0.07], 2.5);
+  fxStatic.add([-560, 208, -50], [-560, 208, -50], 2.0, WHITE, 36, 1, [2.0, 0.0, 0.07], 2.5);
+  // yard floodlights (warm, steady) and terminal roof lamps
+  for (const [r, aD] of [[570, 116], [570, 154], [440, 110], [440, 160]]) {
+    const th = aD * Math.PI / 180, p = [Math.cos(th) * r, -100, Math.sin(th) * r];
+    fxStatic.add(p, p, 4.5, WARM, 14, 1, null, 2.4);
+  }
+  // cargo berth lamps along the platform
+  for (let i = 0; i < 12; i++) {
+    const th = (118 + i * 3.6) * Math.PI / 180;
+    for (const r of [322, 358]) { const p = [Math.cos(th) * r, -96, Math.sin(th) * r]; fxStatic.add(p, p, 0.8, WARM, 7, 1, null, 1.2); }
+  }
+  for (let i = 0; i < 14; i++) {
+    const th = (157 + i * 3.5) * Math.PI / 180, p = [Math.cos(th) * 293, 111, Math.sin(th) * 293];
+    fxStatic.add(p, p, 0.7, WARM, 6, 1, null, 1.1);
+  }
+  fxStatic.commit();
+}
+
+// ---------------------------------------------------------------------
+//  Per-frame simulation: trains, pulses, the beam, cranes, drones
+// ---------------------------------------------------------------------
+let TP = null, DYN = null;
+function setupDynamics() {
+  TP = buildTrainProtos();
+  DYN = {
+    loco: new DynSet(TP.loco, 6), flat: new DynSet(TP.flat, 72), box: new DynSet(TP.box, 150),
+    paxEnd: new DynSet(TP.paxEnd, 12), paxMid: new DynSet(TP.paxMid, 16),
+    drone: new DynSet(TP.drone, 24), crane: new DynSet(TP.dark, 40), craneHull: new DynSet(TP.hull, 8),
+  };
+  for (const k of Object.keys(DYN)) ST.draws.push({ name: 'dyn-' + k, inst: DYN[k].gpu });
+  fx = new Sprites(6000, true);
+  buildStaticLights();
+  buildTimetable();
+  // drones: closed Lissajous loops around the station
+  const R = rng(77);
+  ST.drones = [];
+  for (let i = 0; i < 18; i++) {
+    ST.drones.push({ c: [(R() - 0.3) * 700, -120 + R() * 260, (R() - 0.5) * 700], a: [60 + R() * 200, 10 + R() * 40, 60 + R() * 200], f: [0.004 + R() * 0.01, 0.007 + R() * 0.01, 0.005 + R() * 0.01], ph: [R() * 6, R() * 6, R() * 6] });
+  }
+}
+
+const trainEvents = [];              // consumed by audio and UI
+const prevState = {};
+function frameOf(tr, s, d = 3) {
+  const a = tr.at(s + d), b = tr.at(s - d);
+  return { p: tr.at(s), T: v3.norm(v3.sub(a, b)) };
+}
+function carBasis(pf, pr) {
+  const X = v3.norm(v3.sub(pf, pr));
+  let Z = v3.cross(X, [0, 1, 0]);
+  Z = v3.len(Z) < 1e-3 ? [0, 0, 1] : v3.norm(Z);
+  const Y = v3.cross(Z, X);
+  return { X, Y, Z, c: v3.lerp(pf, pr, 0.5) };
+}
+function simulate(t, dt) {
+  for (const k of Object.keys(DYN)) DYN[k].begin();
+  fx.begin();
+  gateFlash.fill(0);
+  SIM.trains = [];
+  let terminalGlow = 0;
+
+  for (const SL of SIMLINES) {
+    const cfg = SL.cfg, li = SL.li;
+    for (const tr of activeTrains(SL, t)) {
+      const info = { li, n: tr.n, tau: tr.tau, s: tr.s, no: trainNo(li, tr.n), cars: [] };
+      // cars follow the head along the route
+      let off = 0;
+      const units = li === 0 ? [{ len: cfg.locoLen, kind: 'loco' }].concat(Array.from({ length: cfg.cars }, () => ({ len: cfg.carLen, kind: 'flat' })))
+                             : Array.from({ length: cfg.cars }, (_, i) => ({ len: cfg.carLen, kind: i === 0 ? 'head' : (i === cfg.cars - 1 ? 'tail' : 'mid') }));
+      const dwell = tr.tau > SL.tStop && tr.tau < SL.tDepart;
+      const door = dwell ? smoothstep(0, 3, tr.tau - SL.tStop) * smoothstep(0, 3, SL.tDepart - tr.tau) : 0;
+      if (li === 1 && dwell) terminalGlow = Math.max(terminalGlow, door);
+      units.forEach((u, ui) => {
+        const sf = tr.s - off, sr = tr.s - off - u.len;
+        off += u.len + cfg.gap;
+        if (sr < 0 || sf > SL.tr.len) return;
+        const B = carBasis(SL.tr.at(sf), SL.tr.at(sr));
+        const lift = [0, 0.3, 0];
+        const c = v3.add(B.c, lift);
+        info.cars.push(c);
+        if (u.kind === 'loco') DYN.loco.add(c, B.X, B.Y, B.Z, 1, 1, 1);
+        else if (u.kind === 'flat') {
+          DYN.flat.add(c, B.X, B.Y, B.Z, 1, 1, 1);
+          const hr = hash1(tr.n * 31 + ui);
+          const PAL = [[0.24, 0.07, 0.035], [0.028, 0.05, 0.095], [0.10, 0.13, 0.042], [0.58, 0.54, 0.44], [0.052, 0.117, 0.117]];
+          for (const sx of [-4.35, 4.35]) {
+            if (hash1(tr.n * 7 + ui * 3 + sx) < 0.12) continue;
+            const col = PAL[Math.floor(hash1(tr.n * 13 + ui + sx * 2) * 5)];
+            DYN.box.add(v3.add(c, v3.add(v3.mul(B.X, sx), v3.mul(B.Y, 2.85))), B.X, B.Y, B.Z, 8.4, 2.5, 2.45, [col[0], col[1], col[2], hr]);
+          }
+        } else if (u.kind === 'head') DYN.paxEnd.add(c, B.X, B.Y, B.Z, 1, 1, 1, [door, hash1(tr.n), 0, 0]);
+        else if (u.kind === 'tail') DYN.paxEnd.add(c, v3.mul(B.X, -1), B.Y, v3.mul(B.Z, -1), 1, 1, 1, [door, hash1(tr.n + 5), 0, 0]);
+        else DYN.paxMid.add(c, B.X, B.Y, B.Z, 1, 1, 1, [door, hash1(tr.n + ui), 0, 0]);
+      });
+      if (!info.cars.length) continue;
+      // lamps and plumes
+      const head = frameOf(SL.tr, tr.s), tailS = tr.s - SL.trainLen, tail = frameOf(SL.tr, tailS);
+      const free = tr.s < SL.sGateIn + 5 || tailS > SL.sGateOut - 5;
+      const speed = SL.v[Math.min(SL.n - 1, Math.round(tr.s / SL.tr.ds))];
+      const hp = v3.add(v3.madd(head.p, head.T, li === 0 ? 1 : 0), [0, li === 0 ? 1.8 : 2.5, 0]);
+      fx.add(hp, hp, free ? 2.4 : 0.9, WHITE, free ? 26 : 10, 1, null, free ? 2.6 : 1.4);
+      const tp = v3.add(tail.p, [0, 2.2, 0]);
+      fx.add(tp, tp, 0.7, RED, 8, 1, null, 1.3);
+      if (free) {
+        const departing = tailS > SL.sGateOut - 5;
+        const k = departing ? clamp((tailS - SL.sGateOut) / 400, 0.15, 1) : clamp((SL.sGateIn - tr.s) / 2500, 0.1, 0.6);
+        const plumeLen = 12 + speed * 0.9 * k;
+        const pe = v3.madd(tp, tail.T, -plumeLen);
+        const pc = v3.lerp(LINE_LIN[li], [1, 1, 1], 0.45);
+        fx.add(tp, pe, 3.5 + 3 * k, pc, 22 * k + 4, 0.0, null, 2.6);
+        fx.add(tp, tp, 4, pc, 14 * k, 1, null, 2.6);
+      }
+      // gate rings glow while the train body passes through
+      const G = ST.gates[li];
+      for (let r = 0; r < 3; r++) {
+        const rx = G.c[0] + r * 40 + (r ? 10 : 0);
+        let f = 0;
+        for (const c of info.cars) f = Math.max(f, Math.exp(-((c[0] - rx) ** 2) / (45 * 45)));
+        gateFlash[li * 3 + r] = Math.max(gateFlash[li * 3 + r], f);
+      }
+      // events for chimes and the board
+      const key = li + ':' + tr.n, st = tr.tau < SL.tCapture ? 0 : tr.tau < SL.tStop ? 1 : tr.tau < SL.tDepart ? 2 : tr.tau < SL.tRelease ? 3 : 4;
+      if (prevState[key] !== undefined && prevState[key] !== st) trainEvents.push({ li, n: tr.n, state: st, pos: head.p, t });
+      prevState[key] = st;
+      info.state = st; info.head = head.p; info.speed = speed;
+      SIM.trains.push(info);
+    }
+  }
+  SIM.terminalGlow = lerp(SIM.terminalGlow, terminalGlow, 1 - Math.exp(-dt * 2));
+
+  // D: data pulses stream in from deep space along the fibres (batches every 20 s, trickle by load)
+  simulatePulses(t);
+  // X: transmissions every 45 s
+  simulateBeam(t);
+  // cranes sweep the berth, faster while a cargo train is loading
+  const loading = SIM.trains.some((q) => q.li === 0 && q.state === 2);
+  SIM.craneT = (SIM.craneT || 0) + dt * (loading ? 1 : 0.25);
+  ST.cranes.forEach((th0, i) => {
+    const th = th0 + Math.sin(SIM.craneT * 0.12 + i * 2.1) * 0.05;
+    const X = [Math.cos(th), 0, Math.sin(th)], Z = [-Math.sin(th), 0, Math.cos(th)];
+    for (const r of [316, 556]) for (const s of [-6, 6]) {
+      const b = v3.madd([Math.cos(th) * r, -172, Math.sin(th) * r], Z, s);
+      DYN.crane.add(v3.lerp(b, [b[0], -58, b[2]], 0.5), [0, 1, 0], X, Z, 114, 2.2, 2.2);
+    }
+    DYN.crane.add([Math.cos(th) * 436, -54, Math.sin(th) * 436], X, [0, 1, 0], Z, 250, 7, 14);
+    const tr = 360 + 170 * (0.5 + 0.5 * Math.sin(SIM.craneT * 0.33 + i));
+    DYN.craneHull.add([Math.cos(th) * tr, -61, Math.sin(th) * tr], X, [0, 1, 0], Z, 12, 6, 16);
+    const bp = [Math.cos(th) * tr, -56, Math.sin(th) * tr];
+    fx.add(bp, bp, 1.2, [1, 0.55, 0.1], 22, 1, [1.1, i * 0.4, 0.3], 2);
+  });
+  // drones
+  for (let i = 0; i < ST.drones.length; i++) {
+    const D = ST.drones[i];
+    const P = (tt) => [0, 1, 2].map((k) => D.c[k] + D.a[k] * Math.sin(tt * D.f[k] * 6.283 + D.ph[k]));
+    const p = P(t), q = P(t + 0.5);
+    const X = v3.norm(v3.sub(q, p));
+    const Z = v3.norm(v3.cross(X, [0, 1, 0])), Y = v3.cross(Z, X);
+    DYN.drone.add(p, X, Y, Z, 1, 1, 1);
+    fx.add(v3.add(p, [0, 0.8, 0]), v3.add(p, [0, 0.8, 0]), 0.6, WHITE, 16, 1, [1.3, i * 0.13, 0.1], 1.4);
+  }
+  for (const k of Object.keys(DYN)) DYN[k].commit();
+  fx.commit();
+  SIM.corePulse *= Math.exp(-dt * 2.5);
+}
+function hash1(x) { const s = Math.sin(x * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); }
+
+function simulatePulses(t) {
+  const Dg = ST.gates[2].c, xEnd = 70, xGate = Dg[0], FAR = 7000;
+  const vFar = 2400, vFib = 400;
+  const tFar = FAR / vFar, tFib = (xGate - xEnd) / vFib;
+  const BATCH = 20;
+  const col = v3.lerp(LINE_LIN[2], [1, 1, 1], 0.35);
+  const posAt = (age, lane) => {
+    if (age < tFar) { const x = xGate + FAR * (1 - age / tFar); return [[x, Dg[1] + lane[0] * 8, Dg[2] + lane[1] * 8], vFar]; }
+    const a = age - tFar, x = xGate - vFib * a;
+    const sw = (xGate - x) * 0.035 + lane[2] * Math.PI * 2 / 3;
+    return [[x, Dg[1] + Math.sin(sw) * 1.7, Dg[2] + Math.cos(sw) * 1.7], vFib];
+  };
+  const emit = (t0, seed, I) => {
+    const age = t - t0;
+    if (age < 0 || age > tFar + tFib) return;
+    const lane = [hash1(seed) * 2 - 1, hash1(seed + 1) * 2 - 1, Math.floor(hash1(seed + 2) * 3)];
+    const [p, v] = posAt(age, lane);
+    const tail = v > 1000 ? [p[0] + 340, p[1], p[2]] : [p[0] + 55, p[1], p[2]];
+    fx.add(p, tail, v > 1000 ? 2.6 : 1.4, col, I * (v > 1000 ? 10 : 26), 0.0, null, 2.2);
+    if (Math.abs(p[0] - xGate) < 60) gateFlash[6] = Math.max(gateFlash[6], 0.8);
+    if (p[0] > xGate + 30 && p[0] < xGate + 60) gateFlash[7] = Math.max(gateFlash[7], 0.8);
+    if (p[0] > xGate + 80 && p[0] < xGate + 110) gateFlash[8] = Math.max(gateFlash[8], 0.8);
+    if (age > tFar + tFib - 0.5) SIM.pulseArrivals += I;
+  };
+  SIM.pulseArrivals = 0;
+  const b0 = Math.floor(t / BATCH);
+  for (let b = b0 - 1; b <= b0; b++) {
+    const size = 5 + Math.floor(7 * clamp(SIM.load, 0, 1.3));
+    for (let k = 0; k < size; k++) emit(b * BATCH + 2 + k * 0.16, b * 97 + k * 13, 1);
+  }
+  // trickle: one pulse every (1.6 / load) s
+  const gap = 1.6 / Math.max(0.15, SIM.load);
+  const k0 = Math.floor(t / gap);
+  for (let k = k0 - Math.ceil((tFar + tFib) / gap) - 1; k <= k0; k++) emit(k * gap, k * 7.7, 0.45);
+  SIM.nextBatch = (b0 + 1) * BATCH + 2;
+  SIM.corePulse = Math.min(1.5, Math.max(SIM.corePulse, SIM.pulseArrivals * 0.28));
+}
+
+function simulateBeam(t) {
+  const P = 45, ph = ((t % P) + P) % P;
+  const focus = ST.antenna.focus, dir = [1, 0, 0];
+  const col = v3.lerp(LINE_LIN[3], [1, 1, 1], 0.3);
+  SIM.nextBeam = t - ph + P;
+  // conduit packet travels from the spire to the dish before each transmission
+  if (ph > P - 6) {
+    const k = (ph - (P - 6)) / 3;
+    if (k < 1) { const p = v3.lerp([0, 172, 0], [-556, 214, -50], k); fx.add(p, v3.lerp(p, [0, 172, 0], 0.03), 1.6, col, 30, 0.1, null, 2.4); }
+  }
+  let charge = 0, fire = 0;
+  if (ph > P - 3) charge = (ph - (P - 3)) / 3;
+  if (ph < 6) fire = 1;
+  else if (ph < 8) fire = 1 - (ph - 6) / 2;
+  SIM.beamCharge = charge; SIM.beamFire = fire;
+  // dish rim lights
+  const rimI = charge * 30 + fire * 12;
+  if (rimI > 0.1) {
+    for (let k = 0; k < 24; k++) {
+      const a = k / 24 * Math.PI * 2, rim = v3.add(ST.antenna.hub, [45 * 45 / (4 * 34), Math.cos(a) * 45, Math.sin(a) * 45]);
+      if (k / 24 < charge || fire > 0) fx.add(rim, rim, 1.4, col, rimI, 1, null, 1.6);
+    }
+  }
+  if (fire > 0) {
+    const e = fire * (0.85 + 0.15 * Math.sin(t * 40));
+    const far = v3.madd(focus, dir, 20000);
+    fx.add(focus, far, 1.1, [1, 1, 1], 60 * e, 0.0, null, 1.6);
+    fx.add(focus, far, 5, col, 6 * e, 0.0, null, 4);
+    fx.add(focus, focus, 14, col, 35 * e, 1, null, 6);
+    // message packets racing outward
+    for (let k = 0; k < 10; k++) {
+      const x = ((ph * 2600 + k * 820) % 9000);
+      const p = v3.madd(focus, dir, x);
+      fx.add(p, v3.madd(p, dir, -120), 3.2, col, 40 * e, 0.0, null, 3);
+    }
+    const Xg = ST.gates[3].c;
+    for (let r = 0; r < 3; r++) gateFlash[9 + r] = Math.max(gateFlash[9 + r], fire * 0.9);
+    if (ph < 0.2) gateFlash.fill(1, 9, 12);
+  } else if (charge > 0) {
+    for (let r = 0; r < 3; r++) gateFlash[9 + r] = charge * 0.25;
+  }
+}
+
+// =====================================================================
 //  12. Camera (orbit with inertia; the full controller arrives in M4)
 // =====================================================================
 const cam = {
@@ -2218,6 +2872,7 @@ function frame() {
   updateCamera(dt);
   const t = nowS();
   writeFrame(t);
+  simulate(t, dt);
 
   renderShadow();
 
@@ -2247,6 +2902,12 @@ function frame() {
   gl.disable(gl.BLEND);
   gl.depthMask(true);
   renderRibbons(1.6, 2.2);
+  // glow sprites, streaks, the beam
+  gl.useProgram(spriteProg.p);
+  gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(false);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+  fxStatic.draw(); fx.draw();
+  gl.disable(gl.BLEND); gl.depthMask(true);
   gl.disable(gl.DEPTH_TEST);
 
   // composite to screen
@@ -2258,7 +2919,7 @@ function frame() {
   drawFullscreen();
 
   frames++;
-  if (frames === 2) { window.__ready = true; window.__stats = ST.stats; }
+  if (frames === 2) { window.__ready = true; window.__stats = { ...ST.stats, trains: SIM.trains.map((q) => [q.no, q.state, q.head.map(Math.round)]), lines: SIMLINES.map((L) => [L.cfg.key, Math.round(L.total), Math.round(L.tCapture), Math.round(L.tStop), Math.round(L.tDepart), Math.round(L.tRelease)]) }; }
   requestAnimationFrame(frame);
 }
 
@@ -2275,10 +2936,12 @@ const bootSteps = [
     solidProg = program('solid', SOLID_VS, SOLID_FS, '#define QUALITY_HIGH ' + (HI() ? 1 : 0));
     shadowProg = program('shadow', SOLID_VS, SHADOW_FS, '#define SHADOW 1');
     ribbonProg = program('ribbon', RIBBON_VS, RIBBON_FS);
+    spriteProg = program('sprite', SPRITE_VS, SPRITE_FS);
     compProg = program('composite', FULLSCREEN_VS, COMPOSITE_FS);
     buildStars();
   }],
   ['建造太空站 Building the station', () => { buildStation(); setupShadow(); }],
+  ['排定時刻表 Scheduling trains', () => { setupDynamics(); }],
   ['烘焙星空 Baking the sky', function* () { yield* bakeSky(); }],
   ['烘焙環境光 Baking planet light', () => { resize(); updateCamera(0); writeFrame(nowS()); bakeEnvironment(); }],
 ];
