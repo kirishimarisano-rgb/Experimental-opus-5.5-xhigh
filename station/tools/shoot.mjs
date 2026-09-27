@@ -46,16 +46,21 @@ for (const entry of list.filter(Boolean)) {
   const tab = await ctx.newPage();
   tab.on('console', (m) => { const s = m.text(); if (!/GPU stall|swiftshader|Automatic fallback/i.test(s)) console.log(`  [${shot}:${m.type()}]`, s); });
   tab.on('pageerror', (e) => console.log(`  [${shot}:pageerror]`, e.message));
-  const url = `${pathToFileURL(page).href}?shot=${shot}&t=${opts.t}&freeze=1&q=${opts.q}&ui=${opts.ui}${opts.extra}${more ? '&' + more : ''}`;
+  // per-shot params override the global ones
+  const q = new URLSearchParams(`shot=${shot}&t=${opts.t}&freeze=1&q=${opts.q}&ui=${opts.ui}${opts.extra}`);
+  for (const [k, v] of new URLSearchParams(more)) q.set(k, v);
+  const url = `${pathToFileURL(page).href}?${q.toString().replace(/%2C/g, ',')}`;
   const t0 = Date.now();
+  try {
   await tab.goto(url);
   await tab.waitForFunction(() => window.__ready === true || window.__error, null, { timeout: +opts.timeout * 1000, polling: 500 });
   const err = await tab.evaluate(() => window.__error);
   if (err) console.log(`  [${shot}] error:`, err);
   const file = path.join(opts.out, `${label}.png`);
-  await tab.screenshot({ path: file });
+  await tab.screenshot({ path: file, timeout: 300000 });
   const stats = await tab.evaluate(() => window.__stats || null);
   console.log(`${label}: ${file} (${((Date.now() - t0) / 1000).toFixed(1)} s)`, stats ? JSON.stringify(stats) : '');
+  } catch (e) { console.log(`  [${label}] failed:`, e.message); }
   await ctx.close();
 }
 await browser.close();

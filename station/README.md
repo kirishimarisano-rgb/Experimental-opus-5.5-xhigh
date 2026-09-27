@@ -94,7 +94,7 @@ python3 -m http.server 8000
 
 ### 美術審查截圖
 
-見下方「Review rounds」段落（第一輪 vs 第二輪對照）。
+見文末「Review rounds · 美術審查」：第一輪批評、第二輪修改清單與兩輪對照。
 
 ### 非官方聲明
 
@@ -184,4 +184,66 @@ This is an unofficial fan work. It is not affiliated with or endorsed by Anthrop
 
 ## Review rounds · 美術審查
 
-_The before/after comparison is added after the review rounds._
+截圖以 Playwright＋SwiftShader 產生（`node station/tools/shoot.mjs`），站內時間固定（第一輪 `t=1790000012`，第二輪 `t=1790000030`，閘門與跟車兩張另指定時刻）。遠景、深空側、路線圖三個機位在第二輪重新構圖，見修改清單第 6、7、12 項；其餘機位兩輪相同。
+Screenshots are rendered headlessly with Playwright + SwiftShader (`node station/tools/shoot.mjs`) at a frozen station time (round 1 `t=1790000012`, round 2 `t=1790000030`; the gate and follow shots pick their own moments). The hero, deep-side and route-map cameras were re-framed in round 2 (changes 6, 7 and 12); the other cameras are identical in both rounds.
+
+### 第一輪批評 · Round-1 critique
+
+以「截任何一個角度都能當桌布」為標準，第一輪的問題分成三類：
+
+**太假 Fake**
+1. **X 光束有一根黑棍**：光束一端在鏡頭後方時，裁切後的長條在螢幕上被拉到極長，數值失真成負的加法光，畫面出現黑色芯。（06、07、03）
+2. **散熱冠像紅色紙傘**：整片鰭片均勻發光，受光面又被太陽照成粉紅，看起來是上漆的塑膠。（03、04）
+3. **行星看不到晨昏線**：太陽在東北東，行星幾乎全亮；邊緣一大片米色雲霧，海陸像模糊色塊。（01、02、06）
+4. **金色隔熱毯在閃爍**：法線噪聲頻率太高，遠看像亮片。（05）
+5. **客運大廳像米色貨箱**：玻璃讀起來是磁磚，屋頂是幾個白盒子。（01、03）
+
+**太空 Empty**
+6. **主視角像線框模型**：全是細桁架與圓環，沒有大面積的量體，右半邊只有幾條灰色格線。（01）
+7. **深空側朝空無一物的方向拍**：閘門孤零零浮在黑暗裡。（07）
+8. **背光的天線碟像一個黑洞**。（01、06）
+
+**太像 demo**
+9. **核心像條紋煙囪**：28 層一模一樣的白色光帶。（03、04）
+10. **閘門光環像 LED 呼拉圈**：整圈滿亮，加上 bloom 更像玩具。（02、07）
+11. **點光源 bloom 成方塊**：信標與進場燈亮度過高，在 bloom 的低解析度層變成方形光斑。（02）
+12. **路線圖模式被白色光束搶戲**，地圖也偏向一側。（08）
+13. **手機版**：左上角聲明文字被切掉，低畫質太糊。（10）
+
+### 第二輪修改 · What changed in round 2
+
+| # | 修改 Change |
+|---|---|
+| 1 | 光條改為在鏡頭前方一段距離裁切；片段著色器絕不寫入負值或 NaN；最終合成也擋掉 NaN。Streaks are clipped against a plane in front of the camera; the shader never writes negative or NaN light. |
+| 2 | 鰭片改為深色陽極金屬＋淺色邊框；熱量集中在根部與徑向熱管，往外迅速變冷（尖端幾乎不亮）。Dark anodised blades with a lighter frame; heat sits at the root and in radial heat pipes and falls off to cold tips. |
+| 3 | 太陽改到西南方低角度：行星夜側落在站體後方，出現晨昏線、成簇的沿海城市燈與夜側邊緣一條淡淡的氣輝；雲量變少、雲色去米黃，極冠縮小。Low south-west sun: the night side sits behind the station with the terminator, clustered coastal city lights and a faint airglow line; fewer, less beige clouds. |
+| 4 | 隔熱毯皺褶改為低頻、小幅度，材質更粗糙，不再閃爍。Calmer, lower-frequency foil crinkle. |
+| 5 | 大廳改為深色玻璃，每 11 m 一道樓板，窗後亮區依區域明暗不一；屋頂設備改為深色。Dark glazing with floor slabs and uneven occupancy; dark roof plant. |
+| 6 | 主視角拉近並轉向閘門區；南北各加一組太陽能翼提供大面積量體；拆掉一組造成格線感的連結桁架；每座閘門外加一串「兔子燈」進場燈，把視線帶向深空。Tighter hero camera; two solar wings add large surfaces; one grid-like tie truss removed; approach "rabbit" lights run from each gate into deep space. |
+| 7 | 深空側改為從閘門外往回看：前景是閘門，後方是整座站與行星。The deep-space shot now looks back from beyond the gates. |
+| 8 | 天線碟面加上淡淡的翡翠色饋源光，充能與發射時變亮；碟緣加一圈維修燈。Faint jade feed glow on the dish that swells while charging, plus rim service lights. |
+| 9 | 晶圓層的光改為逐層、隨負載跳動的活動量，加上沿圓周掃過的熱點，顏色依活動量從紫到白。Per-layer compute activity that ticks with load, with hot spots sweeping round. |
+| 10 | 閘門平時只剩暗暗的內緣與兩顆沿環奔跑的追逐燈，只有列車或光束通過時才整圈亮起。Idle rings are dim with two running chase lights; they flare only when a train or the beam passes. |
+| 11 | bloom 第一層輸入上限降低；信標、進場燈亮度調低。Lower clamp on the first bloom level; dimmer beacons. |
+| 12 | 路線圖模式時光束與站內燈號一起變暗；地圖重新置中並完整入鏡。Beam and station lights dim in map mode; the map is re-framed. |
+| 13 | 手機只顯示短版聲明；低畫質渲染倍率 0.7 → 0.85。Short credit on phones; low-quality render scale 0.7 → 0.85. |
+
+### 對照 · Before / after
+
+| | 第一輪 Round 1 | 第二輪 Round 2 |
+|---|---|---|
+| 遠景 Hero | ![](screenshots/round1/01-hero.jpg) | ![](screenshots/round2/01-hero.jpg) |
+| 閘門特寫 Gate | ![](screenshots/round1/02-gate.jpg) | ![](screenshots/round2/02-gate.jpg) |
+| 算力中心 45% | ![](screenshots/round1/03-core-45.jpg) | ![](screenshots/round2/03-core-45.jpg) |
+| 算力中心 130% | ![](screenshots/round1/04-core-130.jpg) | ![](screenshots/round2/04-core-130.jpg) |
+| 跟車 Follow | ![](screenshots/round1/05-follow.jpg) | ![](screenshots/round2/05-follow.jpg) |
+| 行星側 Planet side | ![](screenshots/round1/06-planet.jpg) | ![](screenshots/round2/06-planet.jpg) |
+| 深空側 Deep side | ![](screenshots/round1/07-deep.jpg) | ![](screenshots/round2/07-deep.jpg) |
+| 路線圖 Route map | ![](screenshots/round1/08-map.jpg) | ![](screenshots/round2/08-map.jpg) |
+| Sango | ![](screenshots/round1/09-sango.jpg) | ![](screenshots/round2/09-sango.jpg) |
+| 手機 Mobile | ![](screenshots/round1/10-mobile.jpg) | ![](screenshots/round2/10-mobile.jpg) |
+
+第二輪另附一張 X 線發射中的遠景：[01b-hero-beam.jpg](screenshots/round2/01b-hero-beam.jpg)。
+Round 2 also includes the hero view during a transmission: [01b-hero-beam.jpg](screenshots/round2/01b-hero-beam.jpg).
+
+重拍截圖 · Re-render: `node station/tools/shoot.mjs --out station/screenshots/round2 --w 1920 --h 1080 --t 1790000030 --shots "01-hero:hero;02-gate:gate@t=1790000047"`

@@ -159,6 +159,7 @@ body.map #credit{display:none}
   #hint{bottom:calc(max(16px,env(safe-area-inset-bottom)) + 56px);font-size:11px}
   #credit{bottom:auto;top:calc(max(16px,env(safe-area-inset-top)) + 52px);right:max(16px,env(safe-area-inset-right));font-size:10px}
   #toolbar{gap:6px}
+  #credit .long{display:none}
 }
 @media (prefers-reduced-motion: reduce){#board,#hint,#toast{transition:none}}
 </style>
@@ -255,7 +256,7 @@ body.map #credit{display:none}
   <div id="hint">拖曳旋轉 · 滾輪縮放 · 右鍵平移 · 雙擊前往 · 點列車跟隨</div>
   <div id="toast" role="status" aria-live="polite"></div>
   <div id="followTag" hidden><span class="dot"></span><span id="followText"></span><button id="followExit" type="button">返回 Back</button></div>
-  <div id="credit">非官方同人作品 · Unofficial fan work · Opus 5.5 experimental</div>
+  <div id="credit">非官方同人作品 · Unofficial fan work<span class="long"> · Opus 5.5 experimental</span></div>
   <div id="fps" hidden></div>
 </div>
 
@@ -389,7 +390,7 @@ const m4 = {
 const WORLD = {
   planetDir: v3.norm([-0.699, -0.669, -0.254]), // planet centre: WNW, 42 deg below
   planetAngR: (QS.has('pr') ? parseFloat(QS.get('pr')) : 56) * Math.PI / 180, // angular radius of the disc
-  sunDir: v3.norm([0.785, 0.50, -0.366]),    // key light: ENE, 30 deg up
+  sunDir: v3.norm([-0.5997, 0.5299, 0.5997]), // key light: SW, 32 deg up (terminator shows behind the station)
   planetAxis: v3.norm([0.25, 1.0, -0.15]),
 };
 if (QS.has('sun')) { // ?sun=az,el in degrees (az from north toward east) for art tuning
@@ -872,7 +873,7 @@ vec3 planetSurface(vec3 n, vec3 V, vec3 L, vec3 Ts) {
   vec3 cw = vec3(fbm(cz * 2.2 + 21.0, 5), fbm(cz * 2.2 + 33.0, 5), fbm(cz * 2.2 + 47.0, 5));
   float cl = fbm(cz * 3.2 + cw * 1.8, oct - 1) * 0.5 + 0.5;
   float belt = 0.5 + 0.5 * cos(lat * 12.0);
-  float cover = smoothstep(0.57 - 0.05 * belt, 0.78, cl + 0.06 * exp(-dc * 5.0)) * uQual.x * 0.0 + smoothstep(0.57 - 0.05 * belt, 0.78, cl + 0.06 * exp(-dc * 5.0)) * CLOUDS;
+  float cover = smoothstep(0.60 - 0.05 * belt, 0.80, cl + 0.06 * exp(-dc * 5.0)) * CLOUDS;
   cover *= smoothstep(0.25, 0.65, fbm(cz * 14.0 + cw, 4) * 0.5 + 0.5 + 0.25);
 
   float ndl = dot(n, L);
@@ -886,17 +887,18 @@ vec3 planetSurface(vec3 n, vec3 V, vec3 L, vec3 Ts) {
   float dd = nh * nh * (a2 - 1.0) + 1.0;
   float spec = a2 / (PI * dd * dd) * (0.02 + 0.98 * pow(1.0 - max(dot(V, H), 0.0), 5.0)) * diff * 0.3;
   ground += sunI * spec * (1.0 - land) * (1.0 - ice) * (1.0 - cover);
-  vec3 ccol = vec3(0.80, 0.82, 0.85) * (diff * 0.94 + 0.06 * smoothstep(-0.15, 0.2, ndl)) * sunI / PI;
+  vec3 ccol = vec3(0.72, 0.75, 0.80) * (diff * 0.94 + 0.06 * smoothstep(-0.15, 0.2, ndl)) * sunI / PI;
   vec3 col = mix(ground, ccol, cover);
 
   // city lights on the night side: fine golden dust along coasts and rivers
   float night = 1.0 - smoothstep(-0.10, 0.04, ndl);
   if (night > 0.0) {
     float coast = 1.0 - smoothstep(0.0, 0.035, h - SEA);
-    float region = smoothstep(0.50, 0.72, fbm(q * 9.0 + 5.0, 4) * 0.5 + 0.5) * (0.35 + 0.65 * coast);
-    float spark = smoothstep(0.62, 0.9, gnoise(q * 420.0) * 0.5 + 0.5 + 0.35 * gnoise(q * 1100.0));
+    float region = smoothstep(0.42, 0.66, fbm(q * 9.0 + 5.0, 4) * 0.5 + 0.5) * (0.3 + 0.7 * coast);
+    float cluster = smoothstep(0.45, 0.8, gnoise(q * 90.0) * 0.5 + 0.5);
+    float spark = cluster * smoothstep(0.35, 0.8, gnoise(q * 420.0) * 0.5 + 0.5 + 0.3 * gnoise(q * 1100.0));
     float city = land * (1.0 - ice) * region * spark;
-    col += vec3(1.0, 0.64, 0.30) * city * night * (1.0 - 0.85 * cover) * 0.06;
+    col += vec3(1.0, 0.60, 0.26) * city * night * (1.0 - 0.75 * cover) * 1.1;
   }
   return col;
 }
@@ -910,6 +912,13 @@ vec3 planetColor(vec3 rd, out vec3 T) {
   vec3 Tv;
   vec3 col = atmosphere(ro, rd, hit ? tp.x : 1e9, L, Tv);
   T = hit ? vec3(0.0) : Tv;
+  // faint airglow layer ~95 km up, visible edge-on along the night-side limb
+  float tc = -dot(ro, rd);
+  if (tc > 0.0) {
+    float hmin = length(ro + rd * tc) - PR;
+    float ag = exp(-pow((hmin - 70.0) / 9.0, 2.0)) * (hit ? 0.0 : 1.0);
+    col += vec3(0.25, 0.75, 0.45) * ag * 0.012;
+  }
   if (hit) {
     vec3 p = ro + rd * tp.x;
     vec3 n = normalize(p);
@@ -1293,9 +1302,9 @@ Mat material(int id, float e) {
     m.albedo = vec3(0.062, 0.066, 0.075) * (0.8 + 0.3 * pn.y) * (0.75 + 0.25 * pn.x);
     m.rough = 0.45; m.metal = 0.25;
   } else if (id == 3) {                            // MLI gold foil
-    float cr = gnoise(lp * 1.7) * 0.6 + gnoise(lp * 5.3) * 0.3;
-    m.albedo = vec3(0.86, 0.62, 0.26) * (0.85 + 0.15 * cr); m.metal = 1.0; m.rough = 0.28 + 0.12 * abs(cr);
-    m.nOff = vec3(gnoise(lp * 2.1 + 3.0), gnoise(lp * 2.1 + 7.0), gnoise(lp * 2.1 + 11.0)) * 0.25;
+    float cr = gnoise(lp * 0.9) * 0.7 + gnoise(lp * 2.3) * 0.3;
+    m.albedo = vec3(0.78, 0.56, 0.24) * (0.85 + 0.15 * cr); m.metal = 1.0; m.rough = 0.38 + 0.12 * abs(cr);
+    m.nOff = vec3(gnoise(lp * 0.8 + 3.0), gnoise(lp * 0.8 + 7.0), gnoise(lp * 0.8 + 11.0)) * 0.12;
   } else if (id == 4) {                            // WAFER: dark ceramic with gold contacts on the rim
     m.albedo = vec3(0.045, 0.047, 0.055); m.rough = 0.35; m.metal = 0.3;
     if (abs(ln.y) < 0.5) {
@@ -1303,20 +1312,27 @@ Mat material(int id, float e) {
       float pad = step(0.3, c.x) * step(c.x, 0.7) * step(0.25, c.y) * step(c.y, 0.75);
       m.albedo = mix(m.albedo, vec3(0.9, 0.66, 0.3), pad); m.metal = mix(m.metal, 1.0, pad); m.rough = mix(m.rough, 0.25, pad);
     }
-  } else if (id == 5) {                            // FIN: radiator, black-body glow from the root
+  } else if (id == 5) {                            // FIN: dark radiator blade, heat at the root and along heat pipes
     float u = vAttr.y, h = vAttr.z;
-    float pipes = smoothstep(0.35, 0.0, abs(fract(h * 7.0) - 0.5) - 0.12);
-    m.albedo = vec3(0.045, 0.045, 0.05); m.rough = 0.7; m.metal = 0.1;
-    float T = uLoad.y * (1.0 - 0.42 * u) * (0.94 + 0.06 * pipes) * (1.0 - 0.05 * abs(h - 0.5));
-    float I = 0.05 * pow(T / 650.0, 5.2) * uHeat.w * (vParam.x > 0.0 ? vParam.x : 1.0);
-    float edge = smoothstep(0.0, 0.08, u) * (1.0 - 0.3 * smoothstep(0.85, 1.0, u));
-    m.emis = blackbody(T) * I * edge * (0.85 + 0.3 * pipes);
-  } else if (id == 6) {                            // GLASS: dark glazing with warm interior
-    m.albedo = vec3(0.02, 0.025, 0.03); m.rough = 0.08; m.metal = 0.9;
-    vec2 f = fract(vec2(vAttr.y / 4.0, vAttr.z / 3.2));
-    float mull = step(0.06, f.x) * step(f.y, 0.94);
-    float hh = hash12(floor(vec2(vAttr.y / 4.0, vAttr.z / 3.2)) + e);
-    m.emis = vec3(1.0, 0.78, 0.52) * mull * (0.5 + 0.9 * hh) * (0.9 + uDyn.y);
+    float frame = clamp(step(h, 0.035) + step(0.965, h) + step(0.975, u), 0.0, 1.0);
+    float pipe = smoothstep(0.16, 0.0, abs(fract(h * 7.0) - 0.5) - 0.28);        // thin radial pipes
+    m.albedo = mix(vec3(0.026, 0.026, 0.03), vec3(0.16, 0.16, 0.17), frame); m.rough = mix(0.5, 0.35, frame); m.metal = 0.65;
+    float T = uLoad.y * (1.0 - 0.58 * u) * (0.9 + 0.1 * pipe);
+    float I = 0.06 * pow(T / 650.0, 5.2) * uHeat.w * (vParam.x > 0.0 ? vParam.x : 1.0);
+    float root = 1.0 - 0.35 * smoothstep(0.0, 0.5, u);
+    m.emis = blackbody(T) * I * (0.28 + 0.9 * pipe) * root * smoothstep(0.0, 0.05, u) * (1.0 - frame);
+  } else if (id == 6) {                            // GLASS: dark glazing, floor slabs, warm interiors of varying occupancy
+    m.albedo = vec3(0.015, 0.02, 0.026); m.rough = 0.06; m.metal = 0.9;
+    float x = vAttr.y, h = vAttr.z;
+    float fl = fract(h / 11.0);
+    float slab = step(fl, 0.11);
+    vec2 cell = floor(vec2(x / 2.2, h / 11.0));
+    float mull = step(0.07, fract(x / 2.2));
+    float zone = smoothstep(0.35, 0.75, gnoise(vec3(x * 0.035, h * 0.09, e * 7.0)) * 0.5 + 0.5);
+    float lit = zone * (0.4 + 0.6 * hash12(cell + e)) + 0.08;
+    float ceiling = smoothstep(0.75, 0.98, fl) * 0.8;
+    m.emis = vec3(1.0, 0.76, 0.5) * mull * (1.0 - slab) * lit * lit * (0.35 + ceiling) * (0.85 + uDyn.y * 0.5);
+    m.albedo = mix(m.albedo, vec3(0.05, 0.05, 0.055), slab); m.rough = mix(m.rough, 0.5, slab); m.metal = mix(m.metal, 0.3, slab);
   } else if (id == 8) {                            // STRIPE: route-map line colour
     int li = int(e + 0.5);
     m.albedo = vec3(0.05); m.rough = 0.3;
@@ -1355,30 +1371,40 @@ Mat material(int id, float e) {
       m.emis += uLine[0] * step(abs(lp.y - 4.2), 0.12) * step(2.45, abs(lp.z)) * step(lp.x, 6.5) * 2.4;
     }
   } else if (id == 11) {                           // DISH: white composite
-    m.albedo = vec3(0.62, 0.62, 0.6); m.rough = 0.4;
+    m.albedo = vec3(0.72, 0.72, 0.70); m.rough = 0.55;
     float rings = smoothstep(0.02, 0.0, abs(fract(vAttr.z / 6.0) - 0.5) - 0.47);
     m.albedo *= 1.0 - 0.3 * rings;
+    float feed = 1.0 - smoothstep(0.0, 45.0, vAttr.z);
+    m.emis = uLine[3] * (0.05 + 0.25 * feed + uDyn.z * (0.5 + 1.5 * feed)) * (1.0 - 0.6 * rings);
   } else if (id == 12) {                           // EMIS: plain light colour from the instance
     m.albedo = vec3(0.02); m.emis = vParam.rgb * vParam.w;
   } else if (id == 13) {                           // COREGLOW: stacked compute light seen between wafers
-    float y = vWP.y;
-    float bands = 0.5 + 0.5 * sin(y * 0.9 - uLoad.z * 4.0);
-    float fine = 0.5 + 0.5 * sin(atan(vWP.z, vWP.x) * 24.0 + y * 0.3 + uLoad.z);
-    float I = (0.8 + 2.2 * uLoad.x) * (0.55 + 0.45 * bands) * (0.8 + 0.2 * fine) + uDyn.x * 2.5;
-    m.albedo = vec3(0.0); m.emis = mix(vec3(0.62, 0.52, 1.0), vec3(0.95, 0.92, 1.0), bands * 0.5) * I;
+    float y = vWP.y, ang = atan(vWP.z, vWP.x);
+    float layer = floor((y + 140.0) / 10.0);
+    float tick = floor(uCam.w * (0.6 + 1.6 * uLoad.x));
+    float act = hash12(vec2(layer, tick)) * 0.6 + 0.4 * hash12(vec2(layer, floor(uCam.w * 0.13)));
+    float sweep = pow(0.5 + 0.5 * sin(ang * 3.0 + uLoad.z * 3.0 + layer * 1.7), 6.0);
+    float fine = 0.75 + 0.25 * sin(ang * 48.0 + layer);
+    float I = (0.25 + 1.9 * uLoad.x) * (0.25 + 0.75 * act) * (0.6 + 0.9 * sweep) * fine + uDyn.x * 2.0 * step(layer, 7.0);
+    m.albedo = vec3(0.0); m.emis = mix(vec3(0.46, 0.34, 1.0), vec3(0.92, 0.9, 1.0), clamp(act * sweep, 0.0, 1.0)) * I;
   } else if (id == 14) {                           // DARK metal
     m.albedo = vec3(0.05, 0.052, 0.058); m.metal = 0.8; m.rough = 0.32;
-  } else if (id == 15) {                           // SOLAR cells
-    vec2 f = fract(uv / vec2(1.1, 1.1));
-    float grid = step(0.05, f.x) * step(0.05, f.y);
-    m.albedo = mix(vec3(0.5), vec3(0.015, 0.025, 0.06), grid); m.rough = mix(0.5, 0.12, grid); m.metal = 0.5 * grid;
-  } else if (id == 16) {                           // RING: gate ring segment, e = gate*3 + ring
+  } else if (id == 15) {                           // SOLAR: dark blue cells, thin silver grid that fades out with distance
+    vec2 g = uv / vec2(2.2, 1.4);
+    vec2 f = abs(fract(g) - 0.5);
+    float fw = max(fwidth(g.x), fwidth(g.y));
+    float line = (1.0 - smoothstep(0.46, 0.49, max(f.x, f.y))) ;
+    line = mix(1.0 - line, 0.0, smoothstep(0.08, 0.35, fw));
+    float cellV = 0.85 + 0.15 * hash12(floor(g));
+    m.albedo = mix(vec3(0.010, 0.018, 0.045) * cellV, vec3(0.18, 0.19, 0.2), line); m.rough = mix(0.14, 0.4, line); m.metal = mix(0.35, 0.8, line);
+  } else if (id == 16) {                           // RING: gate ring segment, e = gate*3 + ring, u = angle 0..1
     int gi = int(e + 0.5);
     int li = gi / 3;
     m.albedo = vec3(0.05, 0.052, 0.058); m.metal = 0.8; m.rough = 0.3;
-    float inner = smoothstep(0.55, 0.9, vAttr.z);   // v: 0 outer -> 1 inner edge
+    float inner = smoothstep(0.6, 0.95, vAttr.z);
     float flash = uGate[gi];
-    m.emis = uLine[li] * inner * (2.2 + 14.0 * flash) + vec3(1.0) * inner * flash * 4.0;
+    float chase = pow(fract(vAttr.y * 2.0 - uCam.w * 0.22 - float(gi) * 0.137), 14.0);
+    m.emis = uLine[li] * inner * (0.55 + 4.0 * chase + 11.0 * flash) + vec3(1.0) * inner * flash * 3.0;
   } else if (id == 17) {                           // SIGN: canvas atlas
     vec4 t = texture(uSigns, vec2(vAttr.y, vAttr.z));
     m.albedo = vec3(0.02); m.rough = 0.3;
@@ -1598,7 +1624,8 @@ function gateRing(S, c, R, thick, depth, e) {
         const rd = rows[i];
         const pA = v3.add(c, v3.add(v3.mul(rd, rIn), v3.mul(X, xf[0]))), pB = v3.add(c, v3.add(v3.mul(rd, rOut), v3.mul(X, xf[1])));
         const n = nFn(rd);
-        const ia = S.vert(pA, n, MAT.RING, i, vIn, e), ib = S.vert(pB, n, MAT.RING, i, vOut, e);
+        const ang = (s + i / steps) / segs;
+        const ia = S.vert(pA, n, MAT.RING, ang, vIn, e), ib = S.vert(pB, n, MAT.RING, ang, vOut, e);
         if (prev) S.quad(prev[0], ia, ib, prev[1]);
         prev = [ia, ib];
       }
@@ -1768,6 +1795,22 @@ function buildStation() {
       I.dark.beam(polar(392, th3, DY), polar(410, th3, DY + 6), 1, 1);
     }
   }
+  // two solar wings on booms north and south of the deck, tilted toward the sun
+  for (const side of [1, -1]) {
+    const boomA = [0, DY - 4, side * 392], boomB = [0, DY - 4, side * 760];
+    trussBox(I.truss, boomA, boomB, 6, 12, 0.6);
+    for (let k = 0; k < 5; k++) {
+      const z = side * (430 + k * 68);
+      for (const xs of [-1, 1]) {
+        const c = [xs * 44, DY - 2, z];
+        const tilt = 0.5 * xs;   // panels fan slightly toward the low sun
+        const Xp = [Math.cos(tilt), Math.sin(tilt) * 0.35, 0], Zp = [0, 0, 1];
+        const Yp = v3.norm(v3.cross(Zp, Xp));
+        S.box(c, [36, 0.25, 30], v3.norm(Xp), Yp, Zp, MAT.SOLAR);
+        I.dark.beam([0, DY - 4, z], [xs * 8, DY - 3, z], 1.2, 1.2);
+      }
+    }
+  }
   // greebles on the deck and modules
   for (let i = 0; i < (HI() ? 1600 : 700); i++) {
     const thD = R() * 360;
@@ -1821,7 +1864,7 @@ function buildStation() {
   trussBox(I.truss, [392, DY - 6, 0], [1262, DY - 6, 0], 12, 15, 0.9);
   for (let x = 460; x <= 1240; x += 130) I.dark.beam([x, DY, 0], [x, DYL - 3, 0], 2.2, 2.2);
   // tie trusses from the keel to the P and C stems
-  for (const x of [640, 930]) {
+  for (const x of [700]) {
     trussBox(I.truss, [x, DY, -6], [x, 84, P.stemZ + 3], 5, 16, 0.6);
     trussBox(I.truss, [x, DY, 6], [x, -112, C.stemZ - 3], 5, 16, 0.6);
   }
@@ -1945,13 +1988,13 @@ function buildStation() {
     // roof structure and signs
     for (let i = 0; i < 6; i++) {
       const a = a0 + (a1 - a0) * (i + 0.5) / 6;
-      I.hull.add(col(275, a, y1 + 4), [Math.cos(a), 0, Math.sin(a)], [0, 1, 0], [-Math.sin(a), 0, Math.cos(a)], 22, 4, 16);
+      I.dark.add(col(275, a, y1 + 3), [Math.cos(a), 0, Math.sin(a)], [0, 1, 0], [-Math.sin(a), 0, Math.cos(a)], 18, 2.2, 14);
     }
     sign(S, col(296, 180 * DEG, 118), [-1, 0, 0], 40, 10, 5);
     sign(S, col(252, 170 * DEG, 104), [1, 0, 0], 24, 6, 6);
     // observation dome at the west tip (glass is added with Sango in M5)
     const DC = [-306, 86, 0], DRr = 15;
-    S.prismY(DC, DRr + 2, 24, -4, 0, MAT.HULL);
+    S.prismY(DC, DRr + 2, 24, -4, 0, MAT.DARK);
     for (let k = 0; k < 12; k++) {
       const a = k / 12 * Math.PI * 2, pts = [];
       for (let i = 0; i <= 12; i++) {
@@ -2212,7 +2255,7 @@ function renderSolids(load) {
   const T = finTemp(load), I = 0.05 * Math.pow(T / 650, 5.2);
   const g = 0.52 * smoothstep(520, 2300, T) + 0.03, b = 0.24 * smoothstep(1100, 2600, T);
   gl.uniform4f(u.uHeat, I * 1.0, I * g, I * b, 1.0);
-  gl.uniform4f(u.uDyn, SIM.corePulse || 0, SIM.terminalGlow || 0, 0, 0);
+  gl.uniform4f(u.uDyn, SIM.corePulse || 0, SIM.terminalGlow || 0, Math.max(SIM.beamCharge || 0, (SIM.beamFire || 0) * 0.6), 0);
   gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LESS); gl.depthMask(true);
   drawList(ST.draws);
 }
@@ -2601,13 +2644,14 @@ layout(location=2) in vec4 iB;   // p1 (tail), intensity
 layout(location=3) in vec4 iC;   // colour, tail taper
 layout(location=4) in vec4 iD;   // blink period, phase, duty, min px
 out vec3 vPx; out vec3 vInfo; out vec3 vCol;
+uniform float uDim;
 void main() {
   vec4 c0 = uViewProj * vec4(iA.xyz, 1.0), c1 = uViewProj * vec4(iB.xyz, 1.0);
   float blink = 1.0;
   if (iD.x > 0.0) blink = step(fract(uCam.w / iD.x + iD.y), iD.z);
-  const float WN = 0.5;
+  float WN = max(uMisc.x * 4.0, 2.0);
   if ((c0.w < WN && c1.w < WN) || blink < 0.5 || iB.w <= 0.0) { gl_Position = vec4(0.0, 0.0, 2.0, 1.0); return; }
-  // clip long streaks against the near plane instead of dropping them
+  // clip long streaks against a plane in front of the camera instead of dropping them
   if (c1.w < WN) c1 = mix(c0, c1, (c0.w - WN) / (c0.w - c1.w));
   if (c0.w < WN) c0 = mix(c1, c0, (c1.w - WN) / (c1.w - c0.w));
   vec2 hr = uRes.xy * 0.5;
@@ -2629,7 +2673,7 @@ void main() {
   vInfo.z = c.w;
   // keep total energy when a sprite is clamped to its minimum pixel size
   float energy = clamp(mix(wA, wB, t) / w, 0.08, 1.0);
-  vCol = iC.rgb * iB.w * mix(1.0, energy, 0.85);
+  vCol = iC.rgb * iB.w * mix(1.0, energy, 0.85) * uDim;
   vPx.z = w * c.w;
 }`;
 const SPRITE_FS = `
@@ -2643,7 +2687,9 @@ void main() {
   float a = exp(-d * d * 3.2) + 0.25 * exp(-d * 1.8) * step(d, 1.0);
   float along = len > 0.0 ? clamp(px.x / len, 0.0, 1.0) : 0.0;
   a *= mix(1.0, taper, along);
-  o = vec4(vCol * a, 1.0);
+  vec3 c = vCol * a;
+  if (!(c.r >= 0.0 && c.g >= 0.0 && c.b >= 0.0) || px.z <= 0.0) discard;   // never subtract light
+  o = vec4(min(c, vec3(4000.0)), 1.0);
 }`;
 class Sprites {
   constructor(cap, dynamic) {
@@ -2698,14 +2744,25 @@ function buildStaticLights() {
       const c = v3.add(G.c, [r * 40 + (r ? 10 : 0), 0, 0]), Rr = G.R * (1 - r * 0.06) + G.t + 1.2;
       for (let k = 0; k < 4; k++) {
         const a = (k + 0.5) * Math.PI / 2, p = v3.add(c, [2.6, Math.cos(a) * Rr, Math.sin(a) * Rr]);
-        fxStatic.add(p, p, 1.6, WHITE, 26, 1, [1.6, r * 0.18 + k * 0.03, 0.08], 2.2);
+        fxStatic.add(p, p, 1.0, WHITE, 8, 1, [1.6, r * 0.18 + k * 0.03, 0.08], 1.7);
+      }
+    }
+  }
+  // approach 'rabbit' lights: chains running from each gate into deep space
+  for (const G of ST.gates) {
+    if (G.li === 3) continue;
+    for (let k = 0; k < 10; k++) {
+      const x = G.c[0] + 140 + k * 170;
+      for (const sd of [-1, 1]) {
+        const p = v3.add(G.c, [x - G.c[0], sd * (G.R + 10) * 0.7, sd * (G.R + 10) * 0.7]);
+        fxStatic.add(p, p, 0.8, v3.lerp(LINE_LIN[G.li], [1, 1, 1], 0.3), 3.5, 1, [2.2, 1 - k * 0.07, 0.1], 1.5);
       }
     }
   }
   // deck edge strobes
   for (let k = 0; k < 32; k++) {
     const th = k / 32 * Math.PI * 2, p = [Math.cos(th) * 394, -170, Math.sin(th) * 394];
-    fxStatic.add(p, p, 1.2, WHITE, 18, 1, [2.4, R(), 0.06], 1.8);
+    fxStatic.add(p, p, 1.0, WHITE, 10, 1, [2.4, R(), 0.06], 1.6);
   }
   // track side markers every 30 m in line colour (quiet, steady)
   for (let li = 0; li < 2; li++) {
@@ -2714,6 +2771,16 @@ function buildStaticLights() {
       const p = v3.add(v3.madd(F.p, F.B, sd), [0, -0.4, 0]);
       fxStatic.add(p, p, 0.5, LINE_LIN[li], 5, 1, null, 1.1);
     }
+  }
+  // antenna dish rim service lights
+  {
+    const hub = ST.antenna.hub, rimX = 45 * 45 / (4 * 34);
+    for (let k = 0; k < 36; k++) {
+      const a = k / 36 * Math.PI * 2, p = v3.add(hub, [rimX + 0.5, Math.cos(a) * 45.5, Math.sin(a) * 45.5]);
+      fxStatic.add(p, p, 0.7, v3.lerp(LINE_LIN[3], [1, 1, 1], 0.5), 4, 1, null, 1.3);
+    }
+    const f = ST.antenna.focus;
+    fxStatic.add(f, f, 2.5, v3.lerp(LINE_LIN[3], [1, 1, 1], 0.4), 6, 1, null, 2);
   }
   // spire and antenna beacons
   fxStatic.add([0, 178, 0], [0, 178, 0], 2.2, WHITE, 40, 1, [2.0, 0.5, 0.07], 2.5);
@@ -2948,10 +3015,10 @@ function simulateBeam(t) {
     }
   }
   if (fire > 0) {
-    const e = fire * (0.85 + 0.15 * Math.sin(t * 40));
+    const e = fire * (0.85 + 0.15 * Math.sin(t * 40)) * (1 - 0.85 * cam.map);
     const far = v3.madd(focus, dir, 20000);
-    fx.add(focus, far, 1.1, [1, 1, 1], 60 * e, 0.0, null, 1.6);
-    fx.add(focus, far, 5, col, 6 * e, 0.0, null, 4);
+    fx.add(focus, far, 1.0, [1, 1, 1], 34 * e, 0.0, null, 1.5);
+    fx.add(focus, far, 4, col, 4 * e, 0.0, null, 3.5);
     fx.add(focus, focus, 6, col, 14 * e, 1, null, 4);
     // message packets racing outward
     for (let k = 0; k < 10; k++) {
@@ -2970,7 +3037,7 @@ function simulateBeam(t) {
 // =====================================================================
 //  12. Camera: inertial orbit, pan, pinch, fly-to, follow, route-map view
 // =====================================================================
-const HOME = { target: [280, -10, 20], dist: 1150, yaw: 0.30, pitch: 0.24 };
+const HOME = { target: [400, -10, 10], dist: 1120, yaw: 0.50, pitch: 0.24 };
 if (innerWidth / Math.max(1, innerHeight) < 0.8) Object.assign(HOME, { target: [120, 0, 40], dist: 2100, yaw: 0.38, pitch: 0.34 });
 const cam = {
   target: HOME.target.slice(), dist: HOME.dist, yaw: HOME.yaw, pitch: HOME.pitch, fov: 45 * Math.PI / 180,
@@ -2980,9 +3047,9 @@ const cam = {
 };
 const SHOTS = {
   hero:   HOME,
-  planet: { target: [-300, 60, 0], dist: 700, yaw: -1.05, pitch: -0.05 },
-  deep:   { target: [900, 60, 0], dist: 1100, yaw: -1.6, pitch: 0.16 },
-  gate:   { target: [1090, 90, -400], dist: 230, yaw: 1.0, pitch: 0.14 },
+  planet: { target: [-250, 40, 0], dist: 950, yaw: 1.3, pitch: 0.05 },
+  deep:   { target: [760, 40, 0], dist: 1250, yaw: 1.28, pitch: 0.1 },
+  gate:   { target: [1080, 92, -405], dist: 190, yaw: 0.9, pitch: 0.12 },
   core:   { target: [0, 25, 0], dist: 430, yaw: 0.55, pitch: 0.16 },
   map:    { target: [340, 0, 30], dist: 2500, yaw: 0.0, pitch: 1.53 },
   sango:  { target: [-309, 93, 1.5], dist: 13, yaw: 1.46, pitch: 0.15 },
@@ -3036,7 +3103,7 @@ function mapPose() {
   const ex = 2250, ez = 1150; // station extent (m)
   const w = portrait ? ez : ex, h = portrait ? ex : ez;
   const dist = Math.max(w / 2 / Math.tan(hf / 2), h / 2 / Math.tan(vf / 2)) * 1.12;
-  return { target: [330, 0, 25], dist, yaw: portrait ? -Math.PI / 2 : 0, pitch: 1.5 };
+  return { target: portrait ? [330, 0, -60] : [360, 0, 70], dist: dist * 1.08, yaw: portrait ? -Math.PI / 2 : 0, pitch: 1.5 };
 }
 function setMap(on, silent) {
   if (on === cam.mapOn) return;
@@ -3381,20 +3448,23 @@ const UI = {
     const pillParts = [];
     for (let li = 0; li < 2; li++) {
       const SL = SIMLINES[li], H = SL.cfg.headway;
-      const n0 = Math.floor((t - SL.cfg.phase - SL.tDepart) / H);
+      // the followed train keeps its row until it has left, so a second click returns
+      const fol = cam.follow && cam.follow.li === li ? cam.follow.n : null;
+      let n0 = Math.floor((t - SL.cfg.phase - SL.tDepart) / H);
+      if (fol !== null) n0 = Math.min(n0, fol);
       const cand = [];
-      for (let n = n0; n < n0 + 6 && cand.length < 2; n++) {
+      for (let n = n0; n < n0 + 8 && cand.length < 2; n++) {
         const tau = t - (n * H + SL.cfg.phase);
-        if (tau >= SL.tDepart) continue;
+        if (tau >= SL.tDepart && n !== fol) continue;
         cand.push({ n, tau });
       }
       cand.forEach((c, slot) => {
         const row = this.rows.find((r) => r.li === li && r.slot === slot);
         row.n = c.n;
-        const st = c.tau < 0 ? 0 : c.tau < SL.tCapture ? 0 : c.tau < SL.tStop ? 1 : 2;
+        const st = c.tau < SL.tCapture ? 0 : c.tau < SL.tStop ? 1 : c.tau < SL.tDepart ? 2 : c.tau < SL.tRelease ? 3 : 4;
         const dest = trainDest(li, c.n);
-        const until = st === 2 ? SL.tDepart - c.tau : SL.tStop - c.tau;
-        const label = st === 2 ? ['發車', 'Departs'] : ['到站', 'Arrives'];
+        const until = st === 2 ? SL.tDepart - c.tau : st >= 3 ? SL.tRelease - c.tau : SL.tStop - c.tau;
+        const label = st === 2 ? ['發車', 'Departs'] : st >= 3 ? ['出閘', 'Gate'] : ['到站', 'Arrives'];
         row.parts[1].textContent = trainNo(li, c.n);
         row.parts[2].innerHTML = `往 ${dest[0]}<small>to ${dest[1]}</small>`;
         row.parts[3].innerHTML = `${STATUS[st][0]}<small>${label[0]} ${label[1]}</small>`;
@@ -3676,7 +3746,7 @@ function onQualityChanged() { RT.w = 0; resize(); }
 const DOWN_FS = `
 in vec2 vUV; out vec4 o;
 uniform sampler2D uSrc; uniform vec2 uTexel; uniform int uFirst;
-vec3 s(vec2 d) { return min(texture(uSrc, vUV + uTexel * d).rgb, vec3(uFirst == 1 ? 120.0 : 30000.0)); }
+vec3 s(vec2 d) { return min(texture(uSrc, vUV + uTexel * d).rgb, vec3(uFirst == 1 ? 45.0 : 30000.0)); }
 float kw(vec3 c) { return 1.0 / (1.0 + dot(c, vec3(0.2126, 0.7152, 0.0722)) * 0.25); }
 void main() {
   vec3 a = s(vec2(-2, 2)), b = s(vec2(0, 2)), c = s(vec2(2, 2));
@@ -3757,7 +3827,8 @@ void main() {
   vec2 ca = cc * r2 * 0.0035;
   vec3 hdr = vec3(texture(uHDR, uv + ca).r, texture(uHDR, uv).g, texture(uHDR, uv - ca).b);
   vec3 bloom = texture(uBloom, uv).rgb;
-  vec3 c = mix(hdr, bloom, uBloomK) + flare(uv) * 4.0;
+  vec3 c = max(mix(hdr, bloom, uBloomK), 0.0) + flare(uv) * 4.0;
+  if (!(c.r >= 0.0 && c.g >= 0.0 && c.b >= 0.0)) c = vec3(0.0);
   c *= uSunCol.w;
   c = agx(c);
   // grade: cool lift in the shadows, faint warmth in the highlights
@@ -4056,7 +4127,7 @@ function renderDomeGlass() {
 // =====================================================================
 function resize() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const scale = HI() ? dpr : Math.min(dpr, 1.5) * 0.7;
+  const scale = HI() ? dpr : Math.min(dpr, 1.5) * 0.85;
   const w = Math.max(1, Math.round(canvas.clientWidth * scale));
   const h = Math.max(1, Math.round(canvas.clientHeight * scale));
   if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
@@ -4143,7 +4214,8 @@ function frame() {
   gl.useProgram(spriteProg.p);
   gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(false);
   gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
-  fxStatic.draw(); fx.draw();
+  gl.uniform1f(spriteProg.u.uDim, 1 - 0.85 * cam.map); fxStatic.draw();
+  gl.uniform1f(spriteProg.u.uDim, 1); fx.draw();
   gl.disable(gl.BLEND); gl.depthMask(true);
   gl.disable(gl.DEPTH_TEST);
 
@@ -4154,7 +4226,7 @@ function frame() {
   autoQuality(dt);
   fpsMeter(dt);
   frames++;
-  if (frames === 2) { window.__ready = true; window.__stats = { ...ST.stats, trains: SIM.trains.map((q) => [q.no, q.state, q.head.map(Math.round)]), lines: SIMLINES.map((L) => [L.cfg.key, Math.round(L.total), Math.round(L.tCapture), Math.round(L.tStop), Math.round(L.tDepart), Math.round(L.tRelease)]) }; }
+  if (frames === 2) { window.__probe = (tt) => SIMLINES.map((SL) => activeTrains(SL, tt).map((tr) => [SL.cfg.key, tr.n, Math.round(tr.tau), SL.tr.at(tr.s).map(Math.round), Math.round(tr.s - SL.sGateIn), Math.round(SL.sGateOut - SL.sGateIn)])); window.__ready = true; window.__stats = { ...ST.stats, trains: SIM.trains.map((q) => [q.no, q.state, q.head.map(Math.round)]), lines: SIMLINES.map((L) => [L.cfg.key, Math.round(L.total), Math.round(L.tCapture), Math.round(L.tStop), Math.round(L.tDepart), Math.round(L.tRelease)]) }; }
   requestAnimationFrame(frame);
 }
 
