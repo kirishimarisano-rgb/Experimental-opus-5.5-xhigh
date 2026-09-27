@@ -1,0 +1,839 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Opus 5.5 experimental — Fan PV</title>
+<meta name="description" content="An unofficial, fan-made 36-second web PV for Opus 5.5 experimental. Not affiliated with Anthropic.">
+<meta name="theme-color" content="#FAF9F5">
+<style>
+/* ------------------------------------------------------------------
+   Opus 5.5 experimental — unofficial fan PV
+   Palette: cream #FAF9F5 · ink #141413 · clay coral #D97757
+   ------------------------------------------------------------------ */
+:root{
+  --cream:#FAF9F5;
+  --cream-2:#F0EEE6;
+  --ink:#141413;
+  --ink-60:rgba(20,20,19,.6);
+  --ink-35:rgba(20,20,19,.35);
+  --ink-15:rgba(20,20,19,.15);
+  --coral:#D97757;
+  --serif: Georgia, "Noto Serif TC", "Source Han Serif TC", "Songti TC", "PMingLiU", "Times New Roman", serif;
+  --sans: system-ui, -apple-system, "Segoe UI", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--cream-2);color:var(--ink)}
+body{display:grid;place-items:center;overflow:hidden;font-family:var(--sans);-webkit-font-smoothing:antialiased}
+
+/* 16:9 stage, letterboxed on any viewport */
+.stage{
+  position:relative;
+  width:min(100vw, calc(100vh * 16 / 9));
+  height:min(56.25vw, 100vh);
+  background:var(--cream);
+  overflow:hidden;
+  container-type:inline-size;
+  user-select:none;-webkit-user-select:none;
+}
+@supports (height:100dvh){
+  .stage{width:min(100vw, calc(100dvh * 16 / 9));height:min(56.25vw, 100dvh)}
+}
+.cam{position:absolute;inset:0;transform-origin:50% 50%}
+.layer{position:absolute;inset:0}
+svg#gfx{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+
+/* svg primitives */
+.ln{fill:none;stroke:var(--ink);stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1;stroke-dashoffset:0}
+.ln.c{stroke:var(--coral);stroke-width:2.4}
+.ln.soft{stroke:var(--ink-35);stroke-width:1.4}
+.frame{fill:none;stroke:var(--ink-15);stroke-width:1.4}
+.fb{transform-box:fill-box;transform-origin:50% 50%}
+#sigil{transform-box:view-box;transform-origin:800px 450px}
+.echo{fill:none;stroke:var(--coral);stroke-width:1.4;opacity:0}
+.mono{font-family:var(--mono);font-size:26px;fill:var(--ink);white-space:pre}
+.mono .muted,.cm{fill:var(--ink-60)}
+.lab{font-family:var(--serif);font-size:30px;fill:var(--ink);text-anchor:middle}
+.lab-en{font-family:var(--serif);font-style:italic;font-size:20px;fill:var(--ink-60);text-anchor:middle}
+.node{fill:var(--cream);stroke:var(--ink);stroke-width:1.6}
+
+/* type */
+.t{position:absolute;left:0;right:0;text-align:center;margin:0}
+.serif{font-family:var(--serif);font-weight:300}
+.it{font-family:var(--serif);font-style:italic}
+.coral{color:var(--coral)}
+.muted{color:var(--ink-60)}
+.ib{display:inline-block}
+
+#co1{top:59%;font-size:3.3cqw;letter-spacing:.04em}
+#coEn{top:68.5%;font-size:max(1.5cqw,10px);color:var(--ink-60)}
+
+#namecard{position:absolute;left:6cqw;bottom:9%;border-left:1px solid var(--ink);padding:.2cqw 0 .2cqw 1.4cqw}
+#namecard .no{font-family:var(--mono);font-size:max(1cqw,8px);letter-spacing:.2em;color:var(--coral)}
+#namecard .nm{font-family:var(--serif);font-size:3cqw;font-weight:300;line-height:1.2}
+#namecard .nm em{color:var(--coral)}
+#namecard .sub{font-size:max(1.05cqw,8px);color:var(--ink-60);letter-spacing:.12em;margin-top:.3cqw}
+
+.scene{position:absolute;left:8cqw;top:20%;width:36cqw}
+.scene .idx{font-family:var(--mono);font-size:max(1cqw,8px);letter-spacing:.2em;color:var(--ink-60)}
+.scene .kanji{font-family:var(--serif);font-weight:300;font-size:15cqw;line-height:1.1;margin:.4cqw 0 .6cqw -.6cqw}
+.scene .en{font-family:var(--serif);font-style:italic;font-size:2.2cqw;color:var(--coral)}
+.scene .zh{font-size:max(1.5cqw,10px);color:var(--ink-60);letter-spacing:.08em;margin-top:.8cqw}
+
+.cut .w{top:30%;font-family:var(--serif);font-weight:300;font-size:8.5cqw;line-height:1.1}
+.cut .e{top:56%;font-family:var(--serif);font-style:italic;font-size:2.4cqw;color:var(--coral)}
+#bRule{position:absolute;left:35cqw;width:30cqw;top:68%;height:1px;background:var(--ink-35)}
+#bDot{position:absolute;left:50cqw;top:68%;width:1cqw;height:1cqw;margin:-.5cqw 0 0 -.5cqw;border-radius:50%;background:var(--coral)}
+
+.cg{position:absolute;font-family:var(--serif);font-size:3cqw;color:var(--ink-60)}
+#bu1{top:36%;font-size:5.4cqw}
+#bu2{top:50%;font-size:5.4cqw}
+#bu3{top:44%;font-size:4.4cqw;letter-spacing:.1em}
+
+#cl1{top:63%;font-size:8cqw;line-height:1.1}
+#cl2{top:85%;font-size:2.2cqw;color:var(--ink-60)}
+
+#tiRow{top:31%;font-size:12cqw;line-height:1.05;white-space:nowrap}
+#ti55{color:var(--ink)}
+#tiExp{top:57%;font-size:3.6cqw;color:var(--coral)}
+#tiRule{position:absolute;left:40cqw;width:20cqw;top:70%;height:1px;background:var(--ink);transform-origin:50% 50%}
+#tiSub{top:73%;font-size:max(1.25cqw,9px);letter-spacing:.32em;color:var(--ink-60)}
+
+#ouDot{position:absolute;left:50cqw;top:40%;width:1.2cqw;height:1.2cqw;margin-left:-.6cqw;border-radius:50%;background:var(--coral)}
+#ou1{top:47%;font-size:4.4cqw;letter-spacing:.06em}
+#ou2{top:60%;font-size:1.9cqw;color:var(--ink-60)}
+#ou3{bottom:6%;font-size:max(1.05cqw,8px);color:var(--ink-60);letter-spacing:.08em}
+
+/* HUD */
+#hud{position:absolute;left:4cqw;right:4cqw;top:4.2%;display:flex;justify-content:space-between;align-items:center;
+  font-family:var(--mono);font-size:max(.95cqw,8px);letter-spacing:.22em;color:var(--ink-60);z-index:2;pointer-events:none}
+#hud .r{display:flex;align-items:center;gap:1.2cqw}
+#hud .beats{display:flex;gap:.45cqw}
+#hud .beats i{display:block;width:.55cqw;height:.55cqw;min-width:4px;min-height:4px;border:1px solid var(--ink-35)}
+#hud .beats i.on{background:var(--coral);border-color:var(--coral)}
+
+/* overlays */
+.ov{position:absolute;inset:0;pointer-events:none}
+#ink{background:var(--ink);z-index:3}
+#pauseDot{position:absolute;left:50%;top:50%;width:1.3cqw;height:1.3cqw;margin:-.65cqw 0 0 -.65cqw;border-radius:50%;background:var(--coral);z-index:4;pointer-events:none}
+#flash{background:radial-gradient(ellipse at 50% 50%, #FFFEFA 0%, var(--cream) 70%);z-index:5}
+
+/* intro */
+#intro{position:absolute;inset:0;z-index:6;background:var(--cream);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.6cqw;
+  transition:opacity .6s ease, visibility .6s}
+#intro.gone{opacity:0;visibility:hidden}
+#intro .seed{width:1.3cqw;height:1.3cqw;min-width:8px;min-height:8px;border-radius:50%;background:var(--coral);animation:breathe 2s ease-in-out infinite}
+@keyframes breathe{0%,100%{opacity:.55}50%{opacity:1}}
+#intro h1{margin:0;font-family:var(--serif);font-weight:300;font-size:max(4cqw,22px);letter-spacing:.01em}
+#intro h1 em{color:var(--coral)}
+#intro .sub{font-size:max(1.2cqw,10px);color:var(--ink-60);letter-spacing:.14em}
+.btn{font:inherit;font-family:var(--serif);font-size:max(1.7cqw,15px);color:var(--ink);background:transparent;border:1px solid var(--ink);
+  padding:.7em 2.2em;min-height:44px;cursor:pointer;letter-spacing:.08em;transition:background .25s,color .25s,border-color .25s}
+.btn:hover,.btn:focus-visible{background:var(--ink);color:var(--cream);outline:none}
+.btn:focus-visible{box-shadow:0 0 0 3px var(--cream),0 0 0 4px var(--coral)}
+#intro .note{font-size:max(1cqw,9px);color:var(--ink-60);letter-spacing:.1em}
+
+#replay{position:absolute;right:4cqw;bottom:5%;z-index:7;opacity:0;visibility:hidden;transition:opacity .6s,visibility .6s,background .25s,color .25s}
+#replay.show{opacity:1;visibility:visible}
+
+#rotate{position:fixed;left:0;right:0;bottom:max(16px,env(safe-area-inset-bottom));text-align:center;font-size:12px;letter-spacing:.12em;color:var(--ink-60);display:none}
+@media (orientation:portrait) and (max-width:760px){#rotate{display:block}}
+
+@media (prefers-reduced-motion:reduce){
+  #intro .seed{animation:none;opacity:1}
+  #intro,#replay{transition-duration:.3s}
+}
+</style>
+</head>
+<body>
+<main class="stage" id="stage" aria-label="Opus 5.5 experimental fan PV">
+  <div class="cam" id="cam">
+    <svg id="gfx" viewBox="0 0 1600 900" aria-hidden="true">
+      <defs>
+        <radialGradient id="glowGrad" cx="50%" cy="50%" r="50%">
+          <stop offset="0" stop-color="#D97757" stop-opacity=".42"/>
+          <stop offset=".45" stop-color="#D97757" stop-opacity=".13"/>
+          <stop offset="1" stop-color="#D97757" stop-opacity="0"/>
+        </radialGradient>
+        <clipPath id="clipRead"><rect x="900" y="200" width="460" height="500"/></clipPath>
+      </defs>
+
+      <!-- ① cold open hairline -->
+      <path id="hairL" class="ln" d="M800 450 H470" pathLength="1"/>
+      <path id="hairR" class="ln" d="M800 450 H1130" pathLength="1"/>
+
+      <!-- the protagonist "Shiori": a folded page with a coral seed -->
+      <g id="sigil">
+        <circle id="glow" class="fb" cx="800" cy="450" r="380" fill="url(#glowGrad)"/>
+        <path class="echo fb" d="M720 370 H850 L880 400 V530 H720 Z"/>
+        <path class="echo fb" d="M720 370 H850 L880 400 V530 H720 Z"/>
+        <path class="echo fb" d="M720 370 H850 L880 400 V530 H720 Z"/>
+        <path class="echo fb" d="M720 370 H850 L880 400 V530 H720 Z"/>
+        <path id="s1" class="ln" d="M720 370 H850" pathLength="1"/>
+        <path id="s2" class="ln" d="M880 400 V530" pathLength="1"/>
+        <path id="s3" class="ln" d="M880 530 H720" pathLength="1"/>
+        <path id="s4" class="ln" d="M720 530 V370" pathLength="1"/>
+        <path id="ear" d="M850 370 V400 H880 Z" fill="#D97757" fill-opacity=".9"/>
+        <path id="fold" class="ln" d="M850 370 L880 400" pathLength="1"/>
+        <circle id="core" class="fb" cx="800" cy="450" r="10" fill="#D97757"/>
+      </g>
+
+      <!-- ③ montage motifs -->
+      <g id="m-read">
+        <rect x="900" y="200" width="460" height="500" class="frame"/>
+        <g clip-path="url(#clipRead)"><g id="readLines"></g></g>
+        <path id="readHead" class="ln c" d="M880 450 H1380" pathLength="1"/>
+      </g>
+
+      <g id="m-think">
+        <path class="ln soft tb1" pathLength="1" d="M900 450 C990 450 990 330 1080 330"/>
+        <path class="ln soft tb1" pathLength="1" d="M900 450 C990 450 990 570 1080 570"/>
+        <path class="ln soft tb2" pathLength="1" d="M1080 330 C1170 330 1170 270 1260 270"/>
+        <path class="ln soft tb2" pathLength="1" d="M1080 330 C1170 330 1170 390 1260 390"/>
+        <path class="ln soft tb2" pathLength="1" d="M1080 570 C1170 570 1170 510 1260 510"/>
+        <path class="ln soft tb2" pathLength="1" d="M1080 570 C1170 570 1170 630 1260 630"/>
+        <path class="ln soft tb3" pathLength="1" d="M1260 390 C1340 390 1340 350 1420 350"/>
+        <path class="ln soft tb3" pathLength="1" d="M1260 390 C1340 390 1340 430 1420 430"/>
+        <path class="ln soft tb3" pathLength="1" d="M1260 510 C1340 510 1340 550 1420 550"/>
+        <path class="ln c tbC" pathLength="1" d="M900 450 C990 450 990 330 1080 330 C1170 330 1170 390 1260 390 C1340 390 1340 430 1420 430"/>
+        <g class="tn1"><circle class="node" cx="1080" cy="330" r="6"/><circle class="node" cx="1080" cy="570" r="6"/></g>
+        <g class="tn2"><circle class="node" cx="1260" cy="270" r="6"/><circle class="node" cx="1260" cy="390" r="6"/><circle class="node" cx="1260" cy="510" r="6"/><circle class="node" cx="1260" cy="630" r="6"/></g>
+        <g class="tn3"><circle class="node" cx="1420" cy="350" r="6"/><circle class="node" cx="1420" cy="550" r="6"/></g>
+        <circle cx="900" cy="450" r="9" fill="#D97757"/>
+        <circle id="tEnd" class="fb" cx="1420" cy="430" r="11" fill="#D97757"/>
+      </g>
+
+      <g id="m-code">
+        <rect x="880" y="250" width="560" height="400" class="frame"/>
+        <text id="c1" class="mono cm" x="915" y="325" xml:space="preserve">// 先想清楚，再寫</text>
+        <text id="c2" class="mono" x="915" y="380" xml:space="preserve">function unfold(page) {</text>
+        <text id="c3" class="mono" x="915" y="430" xml:space="preserve">  const idea = think(page);</text>
+        <text id="c4" class="mono" x="915" y="480" xml:space="preserve">  return idea.shine();</text>
+        <text id="c5" class="mono" x="915" y="530" xml:space="preserve">}</text>
+        <rect id="caret" x="915" y="560" width="14" height="28" fill="#D97757"/>
+      </g>
+
+      <g id="m-act">
+        <path id="aLine" class="ln" d="M920 430 H1340" pathLength="1"/>
+        <g><circle class="node" cx="920" cy="430" r="20"/><circle id="an1" class="fb" cx="920" cy="430" r="20" fill="#D97757"/></g>
+        <g><circle class="node" cx="1060" cy="430" r="20"/><circle id="an2" class="fb" cx="1060" cy="430" r="20" fill="#D97757"/></g>
+        <g><circle class="node" cx="1200" cy="430" r="20"/><circle id="an3" class="fb" cx="1200" cy="430" r="20" fill="#D97757"/></g>
+        <g><circle class="node" cx="1340" cy="430" r="20"/><circle id="an4" class="fb" cx="1340" cy="430" r="20" fill="#D97757"/></g>
+        <g id="al1"><text class="lab" x="920" y="500">計畫</text><text class="lab-en" x="920" y="530">plan</text></g>
+        <g id="al2"><text class="lab" x="1060" y="500">工具</text><text class="lab-en" x="1060" y="530">use tools</text></g>
+        <g id="al3"><text class="lab" x="1200" y="500">檢查</text><text class="lab-en" x="1200" y="530">verify</text></g>
+        <g id="al4"><text class="lab" x="1340" y="500">完成</text><text class="lab-en" x="1340" y="530">ship</text></g>
+      </g>
+    </svg>
+
+    <div class="layer" aria-hidden="true">
+      <!-- ① cold open -->
+      <p id="co1" class="t serif"><span id="co1a" class="ib">一個念頭，</span><span id="co1b" class="ib">還沒有名字。</span></p>
+      <p id="coEn" class="t it">A thought, still unnamed.</p>
+
+      <!-- ② name card -->
+      <div id="namecard">
+        <div class="no">No. 5.5 — CODENAME</div>
+        <div class="nm">Opus <em>experimental</em></div>
+        <div class="sub">屬性 — 讀・想・寫・行</div>
+      </div>
+
+      <!-- ③ montage A -->
+      <section class="scene" id="s-read"><div class="idx">01 / 04</div><div class="kanji">讀</div><div class="en">Read — long context</div><div class="zh">整本書，一次讀完。</div></section>
+      <section class="scene" id="s-think"><div class="idx">02 / 04</div><div class="kanji">想</div><div class="en">Think — extended reasoning</div><div class="zh">先想清楚，再開口。</div></section>
+      <section class="scene" id="s-code"><div class="idx">03 / 04</div><div class="kanji">寫</div><div class="en">Write — code &amp; prose</div><div class="zh">一行一行，寫到能跑。</div></section>
+      <section class="scene" id="s-act"><div class="idx">04 / 04</div><div class="kanji">行</div><div class="en">Act — agents &amp; tools</div><div class="zh">一步一步，把事做完。</div></section>
+
+      <!-- ③ montage B -->
+      <div class="cut" id="b1"><p class="t w" data-rm="細心・好奇">細心</p><p class="t e" data-rm="Careful · Curious">Careful</p></div>
+      <div class="cut" id="b2"><p class="t w">好奇</p><p class="t e">Curious</p></div>
+      <div class="cut" id="b3"><p class="t w" data-rm="誠實・溫和">誠實</p><p class="t e" data-rm="Honest · Kind">Honest</p></div>
+      <div class="cut" id="b4"><p class="t w">溫和</p><p class="t e">Kind</p></div>
+      <div id="bRule"></div><div id="bDot"></div>
+
+      <!-- ④ build-up -->
+      <span class="cg" id="g1" style="left:10cqw;top:14%">讀</span>
+      <span class="cg" id="g2" style="left:87cqw;top:14%">想</span>
+      <span class="cg" id="g3" style="left:10cqw;top:80%">寫</span>
+      <span class="cg" id="g4" style="left:87cqw;top:80%">行</span>
+      <p id="bu1" class="t serif">不是更快，</p>
+      <p id="bu2" class="t serif">是<span class="coral">更深</span>。</p>
+      <p id="bu3" class="t serif">那麼——</p>
+
+      <!-- ⑤ climax -->
+      <p id="cl1" class="t serif">發光。</p>
+      <p id="cl2" class="t it">Let the thought shine.</p>
+
+      <!-- ⑥ title -->
+      <p id="tiRow" class="t serif"><span id="tiOpus" class="ib">Opus</span> <span id="ti55" class="ib">5.5</span></p>
+      <p id="tiExp" class="t it">experimental</p>
+      <div id="tiRule"></div>
+      <p id="tiSub" class="t">OPUS〔拉丁文〕作品 ・ 實驗版</p>
+
+      <!-- ⑦ outro -->
+      <div id="ouDot"></div>
+      <p id="ou1" class="t serif">慢慢想，好好說。</p>
+      <p id="ou2" class="t it">Think slowly. Speak well.</p>
+      <p id="ou3" class="t">非官方同人作品・與 Anthropic 無關 — Unofficial fan work. Not affiliated with Anthropic.</p>
+    </div>
+  </div>
+
+  <div id="hud" aria-hidden="true">
+    <span>OPUS 5.5 — EXPERIMENTAL</span>
+    <span class="r"><span id="hudBar">§ 01 / 18</span><span class="beats"><i></i><i></i><i></i><i></i></span></span>
+  </div>
+  <div id="ink" class="ov"></div>
+  <div id="pauseDot"></div>
+  <div id="flash" class="ov"></div>
+
+  <div id="intro">
+    <div class="seed"></div>
+    <h1>Opus 5.5 <em>experimental</em></h1>
+    <div class="sub">AN UNOFFICIAL FAN PV ・ 非官方同人 PV</div>
+    <button class="btn" id="play" type="button">▶ Play</button>
+    <div class="note">建議開啟聲音 · Sound on · 36s</div>
+  </div>
+  <button class="btn" id="replay" type="button" tabindex="-1">↻ Replay</button>
+</main>
+<div id="rotate">橫放手機觀看更佳 · Rotate for a larger view</div>
+<noscript><p style="position:fixed;top:1em;left:0;right:0;text-align:center">This PV needs JavaScript.</p></noscript>
+
+<script>
+(() => {
+'use strict';
+
+/* =====================================================================
+   MASTER CLOCK
+   One BPM constant drives everything. Visual time is read from the
+   AudioContext clock, so picture and music can never drift apart.
+   ===================================================================== */
+const BPM = 120;
+const SPB = 60 / BPM;            // seconds per beat
+const BAR = SPB * 4;             // 4/4
+const BARS = 18;
+const DURATION = BARS * BAR;     // 36 s
+const at = (bar, beat = 1, sixteenth = 0) => ((bar - 1) * 4 + (beat - 1)) * SPB + sixteenth * SPB / 4;
+
+const params = new URLSearchParams(location.search);
+const RM = params.has('rm') || matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* =====================================================================
+   TWEEN ENGINE — a tiny, deterministic, seekable timeline.
+   state(t) is a pure function of t, so any frame can be rendered
+   directly (used for sync and for ?t= screenshots).
+   ===================================================================== */
+const EASE = {
+  lin: p => p,
+  out: p => 1 - Math.pow(1 - p, 3),
+  in: p => p * p * p,
+  inOut: p => p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2,
+  expo: p => p >= 1 ? 1 : 1 - Math.pow(2, -10 * p),
+};
+const MOTION = new Set(['x', 'y', 'scale', 'sx', 'ls']);
+const tracks = new Map();
+const $$ = s => typeof s === 'string' ? [...document.querySelectorAll(s)] : [].concat(s);
+
+function push(el, prop, k) {
+  let tr = tracks.get(el);
+  if (!tr) tracks.set(el, tr = {});
+  (tr[prop] || (tr[prop] = [])).push(k);
+}
+
+/** tw(target, startSec, durSec, {prop:[from,to]}, {ease, decor}) */
+function tw(target, t0, d, props, opt = {}) {
+  if (RM && opt.decor) return;                     // purely decorative motion: dropped
+  const ease = EASE[opt.ease || 'out'];
+  for (const el of $$(target)) {
+    for (const [p, v] of Object.entries(props)) {
+      let [a, b] = Array.isArray(v) ? v : [v, v];
+      if (RM && MOTION.has(p)) { push(el, p, { t0, d: 0, a: b, b, ease }); continue; }
+      if (RM && (p === 'draw' || p === 'type')) {   // drawing / typing → gentle fade
+        const show = b > a;
+        push(el, 'opacity', { t0, d: Math.max(d, .45), a: show ? 0 : 1, b: show ? 1 : 0, ease: EASE.inOut });
+        continue;
+      }
+      if (RM && p === 'opacity' && d === 0 && !opt.hard) d = .25;  // soften hard cuts
+      push(el, p, { t0, d, a, b, ease });
+    }
+  }
+}
+
+function valueAt(list, t) {
+  let v = list[0].a;
+  for (const k of list) {
+    if (t < k.t0) break;
+    const p = k.d <= 0 ? 1 : Math.min(1, (t - k.t0) / k.d);
+    v = k.a + (k.b - k.a) * k.ease(p);
+  }
+  return v;
+}
+
+function apply(el, tr, t) {
+  const g = p => tr[p] ? valueAt(tr[p], t) : undefined;
+  const o = g('opacity');
+  if (o !== undefined) {
+    el.style.opacity = o.toFixed(4);
+    el.style.visibility = o <= .001 ? 'hidden' : '';
+  }
+  if (tr.x || tr.y || tr.scale || tr.sx) {
+    const u = el instanceof SVGElement ? 'px' : 'cqw';
+    const s = g('scale') ?? 1, sx = g('sx');
+    el.style.transform = `translate(${(g('x') ?? 0).toFixed(3)}${u},${(g('y') ?? 0).toFixed(3)}${u}) scale(${(sx ?? s).toFixed(4)},${s.toFixed(4)})`;
+  }
+  if (tr.draw) el.style.strokeDashoffset = (1 - g('draw')).toFixed(4);
+  if (tr.type) {
+    const n = Math.round(g('type'));
+    if (el.__n !== n) { el.textContent = el.dataset.full.slice(0, n); el.__n = n; }
+  }
+  if (tr.ls) el.style.letterSpacing = g('ls').toFixed(3) + 'em';
+}
+
+const hudBar = document.getElementById('hudBar');
+const hudBeats = [...document.querySelectorAll('#hud .beats i')];
+function render(t) {
+  for (const [el, tr] of tracks) apply(el, tr, t);
+  const tc = Math.max(0, Math.min(t, DURATION - 1e-3));
+  const bar = Math.floor(tc / BAR) + 1, beat = Math.floor((tc % BAR) / SPB);
+  const label = `§ ${String(bar).padStart(2, '0')} / ${BARS}`;
+  if (hudBar.textContent !== label) hudBar.textContent = label;
+  hudBeats.forEach((b, i) => b.classList.toggle('on', i === beat));
+}
+
+/* =====================================================================
+   STORYBOARD — every cue sits on a bar/beat.
+   ===================================================================== */
+function build() {
+  const b = SPB;
+
+  // procedural page lines for the "Read" motif (deterministic)
+  const rl = document.getElementById('readLines');
+  let seed = 7; const rnd = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
+  for (let i = 0; i < 34; i++) {
+    const w = i % 7 === 6 ? 120 + rnd() * 80 : 280 + rnd() * 110;
+    const r = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    r.setAttribute('x', 940); r.setAttribute('y', 236 + i * 26);
+    r.setAttribute('width', w.toFixed(0)); r.setAttribute('height', 6);
+    r.setAttribute('fill', i === 11 || i === 23 ? 'rgba(217,119,87,.75)' : 'rgba(20,20,19,.16)');
+    rl.appendChild(r);
+  }
+  document.querySelectorAll('#m-code text').forEach(el => el.dataset.full = el.textContent);
+  if (RM) {
+    document.querySelectorAll('[data-rm]').forEach(el => el.textContent = el.dataset.rm);
+    document.querySelectorAll('#b2,#b4').forEach(el => el.style.display = 'none');   // merged into #b1/#b3
+  }
+
+  const flash = (tPeak, rampIn, peak, fade) => {
+    if (RM) { peak *= .45; rampIn = Math.max(rampIn, .4); fade *= 1.6; }
+    tw('#flash', tPeak - rampIn, rampIn, { opacity: [0, peak] }, { ease: 'in' });
+    tw('#flash', tPeak, fade, { opacity: [peak, 0] });
+  };
+  const cutIn = (s, t) => tw(s, t, 0, { opacity: [0, 1] });
+  const cutOut = (s, t) => tw(s, t, 0, { opacity: [1, 0] });
+
+  // explicit initial states (a track holds its first "from" value until its first cue)
+  tw('#sigil', 0, 0, { scale: [1, 1], y: [0, 0] });
+  tw('.echo', 0, 0, { opacity: [0, 0] }, { hard: true });
+
+  /* ---------- ① COLD OPEN · bars 1–2 ---------- */
+  tw('#core', at(1), b * 1.5, { opacity: [0, 1], scale: [.3, 1] });
+  for (let bar = 1; bar <= 4; bar++) for (let beat = 1; beat <= 4; beat++) {
+    if ((bar === 1 && beat === 1) || (bar === 4 && beat >= 3)) continue;
+    tw('#core', at(bar, beat), b * .9, { scale: [1.22, 1] }, { decor: true });
+  }
+  tw('#co1a', at(1, 3), b * 1.2, { opacity: [0, 1], y: [.6, 0] });
+  tw('#hairL,#hairR', at(2), b * 2, { draw: [0, 1] }, { ease: 'inOut' });
+  tw('#co1b', at(2, 3), b * 1.2, { opacity: [0, 1], y: [.6, 0] });
+  tw('#coEn', at(2, 3) + .15, b * 1.2, { opacity: [0, 1] });
+  tw('#co1a,#co1b,#coEn', at(3), b * .75, { opacity: [1, 0] });
+  tw('#hairL,#hairR', at(3), b, { draw: [1, 0] }, { ease: 'inOut' });
+
+  /* ---------- ② BIRTH · bars 3–4 ---------- */
+  ['#s1', '#s2', '#s3', '#s4'].forEach((s, i) => tw(s, at(3, 1 + i), b, { draw: [0, 1] }, { ease: 'inOut' }));
+  tw('#fold', at(4), b * .8, { draw: [0, 1] });
+  tw('#ear', at(4), b, { opacity: [0, 1] });
+  tw('#namecard', at(4), b * 1.2, { opacity: [0, 1], x: [-1, 0] });
+  tw('#core', at(4, 3), b * .5, { scale: [1, 1.7] }, { decor: true });
+  tw('#core', at(4, 3.5), b * .5, { scale: [1.7, 1] }, { decor: true, ease: 'inOut' });
+  tw('#hud', at(3), b, { opacity: [0, 1] });
+  flash(at(5), b, .95, b * 1.3);                       // 4.4 → cream flash into the cut
+  cutOut('#sigil', at(5)); cutOut('#namecard', at(5));
+
+  /* ---------- ③ MONTAGE A · bars 5–8 (one cut per bar) ---------- */
+  ['read', 'think', 'code', 'act'].forEach((n, i) => {
+    const bar = 5 + i, s = `#s-${n}`;
+    cutIn([s, `#m-${n}`].join(','), at(bar));
+    cutOut([s, `#m-${n}`].join(','), at(bar + 1));
+    tw(`${s} .idx`, at(bar), b, { opacity: [0, 1] });
+    tw(`${s} .kanji`, at(bar), b * 1.2, { opacity: [0, 1], y: [1.2, 0] });
+    tw(`${s} .en`, at(bar, 3), b, { opacity: [0, 1], x: [-.8, 0] });
+    tw(`${s} .zh`, at(bar, 3) + .12, b, { opacity: [0, 1] });
+    tw('#cam', at(bar), BAR, { scale: [1, 1.025] }, { ease: 'lin', decor: true });
+  });
+  // read
+  tw('#readLines', at(5), BAR, { y: [0, -300] }, { ease: 'lin' });
+  tw('#readHead', at(5), b, { draw: [0, 1] });
+  // think
+  tw('#m-think .tb1', at(6, 1), b * .9, { draw: [0, 1] });
+  tw('#m-think .tn1', at(6, 1) + b * .6, b * .4, { opacity: [0, 1] });
+  tw('#m-think .tb2', at(6, 2), b * .9, { draw: [0, 1] });
+  tw('#m-think .tn2', at(6, 2) + b * .6, b * .4, { opacity: [0, 1] });
+  tw('#m-think .tb3', at(6, 3), b * .9, { draw: [0, 1] });
+  tw('#m-think .tn3', at(6, 3) + b * .6, b * .4, { opacity: [0, 1] });
+  tw('#m-think .tbC', at(6, 4), b * .9, { draw: [0, 1] }, { ease: 'inOut' });
+  tw('#tEnd', at(6, 4) + b * .8, b * .6, { opacity: [0, 1], scale: [.2, 1] });
+  // code
+  ['#c1', '#c2', '#c3', '#c4', '#c5'].forEach((c, i) => {
+    const n = document.querySelector(c).dataset.full.length;
+    tw(c, at(7) + i * b * .78, b * .7, { type: [0, n] }, { ease: 'lin' });
+  });
+  for (let h = 0; h < 8; h++) tw('#caret', at(7) + h * b / 2, 0, { opacity: [h % 2 ? 1 : 0, h % 2 ? 0 : 1] }, { decor: true, hard: true });
+  // act
+  tw('#aLine', at(8), b * 3.2, { draw: [0, 1] }, { ease: 'lin' });
+  [1, 2, 3, 4].forEach(i => {
+    tw(`#an${i}`, at(8, i), b * .5, { opacity: [0, 1], scale: [.4, 1] });
+    tw(`#al${i}`, at(8, i), b * .6, { opacity: [0, 1] });
+  });
+
+  /* ---------- ③ MONTAGE B · bars 9–10 (half-bar cuts, accelerating) ---------- */
+  const cuts = RM ? [['#b1', at(9), BAR], ['#b3', at(10), BAR]]
+                  : [['#b1', at(9, 1), 2 * b], ['#b2', at(9, 3), 2 * b], ['#b3', at(10, 1), 2 * b], ['#b4', at(10, 3), 2 * b]];
+  cuts.forEach(([id, t, len], i) => {
+    cutIn(id, t); cutOut(id, t + len);
+    tw(`${id} .w`, t, b * .9, { opacity: [0, 1], ls: [.28, .04] });
+    tw(`${id} .e`, t + b * .5, b * .8, { opacity: [0, 1] });
+    tw('#bDot', t, len, { x: i % 2 ? [13, -13] : [-13, 13] }, { ease: 'inOut', decor: true });
+  });
+  cutIn('#bRule,#bDot', at(9)); cutOut('#bRule,#bDot', at(11));
+
+  /* ---------- ④ BUILD-UP · bars 11–12 ---------- */
+  const gv = { g1: [38.5, 17], g2: [-38.5, 17], g3: [38.5, -18.5], g4: [-38.5, -18.5] };
+  Object.entries(gv).forEach(([id, [dx, dy]]) => {
+    tw('#' + id, at(11), b, { opacity: [0, .6] });
+    tw('#' + id, at(11), b * 7, { x: [0, dx], y: [0, dy] }, { ease: 'in', decor: true });
+    tw('#' + id, at(12, 2), b * 1.5, { opacity: [.6, 0] });
+  });
+  tw('#bu1', at(11), b, { opacity: [0, 1], y: [.8, 0] });
+  tw('#bu2', at(11, 3), b, { opacity: [0, 1], y: [.8, 0] });
+  tw('#bu1,#bu2', at(12), b * .45, { opacity: [1, 0] });
+  tw('#bu3', at(12) + b * .25, b * .8, { opacity: [0, 1], ls: [.4, .1] });
+  tw('#cam', at(11), b * 7, { scale: [1, 1.07] }, { ease: 'in', decor: true });
+  // 12.4 — the pause: ink, silence, one coral point
+  tw('#bu3', at(12, 4), 0, { opacity: [1, 0] }, { hard: true });
+  tw('#ink,#pauseDot', at(12, 4), 0, { opacity: [0, 1] });
+  tw('#hud', at(12, 4), 0, { opacity: [1, 0] });
+  tw('#cam', at(12, 4), 0, { scale: [1.07, 1] }, { decor: true });
+
+  /* ---------- ⑤ CLIMAX · bars 13–14 ---------- */
+  tw('#ink,#pauseDot', at(13), 0, { opacity: [1, 0] }, { hard: true });
+  flash(at(13), 0, 1, b * 1.6);
+  cutIn('#sigil', at(13));
+  tw('#sigil', at(13), b * 7, { scale: [1.42, 1.58], y: [-85, -85] }, { ease: 'lin' });
+  tw('#glow', at(13), b * 2, { opacity: [0, 1] });
+  for (let i = 0; i < 8; i++) {
+    const t = at(13) + i * b;
+    tw('#glow', t, b, { scale: [1.07, 1] }, { decor: true });
+    tw(document.querySelectorAll('.echo')[i % 4], t, b * 1.8, { opacity: [.55, 0], scale: [1, 2.5] }, { decor: true });
+  }
+  tw('#cl1', at(13), b * 2, { opacity: [0, 1], scale: [1.12, 1] });
+  tw('#cl2', at(14), b, { opacity: [0, 1], y: [.6, 0] });
+  tw('#cam', at(13), b * 8, { scale: [1, 1.04] }, { ease: 'lin', decor: true });
+
+  /* ---------- ⑥ TITLE CARD · bars 15–16 ---------- */
+  tw('#cl1,#cl2', at(14, 3), b * .6, { opacity: [1, 0] });
+  tw('#sigil', at(14, 3), b * 2, { scale: [1.58, .42], y: [-85, -272] }, { ease: 'inOut' });
+  tw('#glow', at(15), b, { opacity: [1, .5] });
+  tw('#tiOpus', at(15), b * 1.5, { opacity: [0, 1], ls: [.14, 0] });
+  tw('#ti55', at(15, 2), b, { opacity: [0, 1] });
+  tw('#tiExp', at(15, 3), b * 1.2, { opacity: [0, 1], y: [.6, 0] });
+  tw('#tiRule', at(16), b * .3, { opacity: [0, 1] });
+  tw('#tiRule', at(16), b * 1.5, { sx: [0, 1] }, { ease: 'inOut' });
+  tw('#tiSub', at(16) + b * .5, b, { opacity: [0, 1] });
+  tw('#cam', at(15), b * 8, { scale: [1.04, 1.07] }, { ease: 'lin', decor: true });
+
+  /* ---------- ⑦ OUTRO · bars 17–18 ---------- */
+  tw('#tiOpus,#ti55,#tiExp,#tiRule,#tiSub,#sigil', at(16, 4), b, { opacity: [1, 0] });
+  tw('#cam', at(17), 0, { scale: [1.07, 1] }, { decor: true });
+  tw('#ouDot', at(17), b, { opacity: [0, 1], scale: [.4, 1] });
+  tw('#ou1', at(17), b * 1.5, { opacity: [0, 1], y: [.5, 0] });
+  tw('#ou2', at(17, 3), b, { opacity: [0, 1] });
+  tw('#ou3', at(18), b * 1.5, { opacity: [0, 1] });
+
+  // stable order by start time
+  for (const tr of tracks.values()) for (const k in tr) tr[k].sort((p, q) => p.t0 - q.t0);
+}
+
+/* =====================================================================
+   MUSIC — synthesised with Web Audio. D major, 120 BPM, original.
+   ===================================================================== */
+const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
+
+function Synth(ac) {
+  const out = ac.createGain(); out.gain.value = .85;
+  const comp = ac.createDynamicsCompressor();
+  comp.threshold.value = -16; comp.knee.value = 12; comp.ratio.value = 3.5; comp.attack.value = .004; comp.release.value = .18;
+  out.connect(comp); comp.connect(ac.destination);
+
+  const imp = ac.createBuffer(2, ac.sampleRate * 2.6, ac.sampleRate);
+  for (let c = 0; c < 2; c++) {
+    const d = imp.getChannelData(c);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / d.length, 2.8);
+  }
+  const rev = ac.createConvolver(); rev.buffer = imp;
+  const revOut = ac.createGain(); revOut.gain.value = .8;
+  rev.connect(revOut); revOut.connect(out);
+
+  const nb = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate);
+  const nd = nb.getChannelData(0); for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+
+  const bus = (node, wet) => {
+    node.connect(out);
+    if (wet) { const g = ac.createGain(); g.gain.value = wet; node.connect(g); g.connect(rev); }
+  };
+  const osc = (type, f, t, end) => { const o = ac.createOscillator(); o.type = type; o.frequency.value = f; o.start(t); o.stop(end); return o; };
+  const noise = (t, end) => { const s = ac.createBufferSource(); s.buffer = nb; s.loop = true; s.start(t, Math.random() * 1.5); s.stop(end); return s; };
+  const filt = (type, f, q = .7) => { const n = ac.createBiquadFilter(); n.type = type; n.frequency.value = f; n.Q.value = q; return n; };
+  const decayEnv = (g, t, v, dec, att = .005) => {
+    g.gain.setValueAtTime(.0001, t);
+    g.gain.exponentialRampToValueAtTime(v, t + att);
+    g.gain.exponentialRampToValueAtTime(.0001, t + dec);
+  };
+
+  return {
+    pluck(t, m, len = .4, v = .18, wet = .3) {
+      const end = t + len + .45, f = mtof(m);
+      const lp = filt('lowpass', 4800, .5), g = ac.createGain(), g2 = ac.createGain(); g2.gain.value = .22;
+      lp.frequency.setValueAtTime(4800, t); lp.frequency.exponentialRampToValueAtTime(800, end);
+      osc('triangle', f, t, end).connect(lp);
+      osc('sine', f * 2, t, end).connect(g2); g2.connect(lp);
+      lp.connect(g); decayEnv(g, t, v, len + .4); bus(g, wet);
+    },
+    bell(t, m, v = .12, dec = 2.4, wet = .45) {
+      const f = mtof(m), g = ac.createGain();
+      [[1, 1], [2, .32], [3.01, .12], [4.2, .05]].forEach(([r, a]) => {
+        const pg = ac.createGain(); pg.gain.value = a;
+        osc('sine', f * r, t, t + dec + .1).connect(pg); pg.connect(g);
+      });
+      decayEnv(g, t, v, dec, .004); bus(g, wet);
+    },
+    pad(t, notes, dur, v = .025, rel = .9, att = .5) {
+      const end = t + dur + rel + .05, lp = filt('lowpass', 1500, .2), g = ac.createGain();
+      notes.forEach(m => [-7, 7].forEach(c => { const o = osc('sawtooth', mtof(m), t, end); o.detune.value = c; o.connect(lp); }));
+      lp.connect(g);
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(v, t + Math.min(att, dur * .5));
+      g.gain.setValueAtTime(v, t + dur);
+      g.gain.linearRampToValueAtTime(0, t + dur + rel);
+      bus(g, .5);
+    },
+    bass(t, m, len = .25, v = .2) {
+      const end = t + len + .1, lp = filt('lowpass', 700, .6), g = ac.createGain(), sg = ac.createGain(); sg.gain.value = .7;
+      osc('triangle', mtof(m), t, end).connect(lp);
+      osc('sine', mtof(m - 12), t, end).connect(sg); sg.connect(lp);
+      lp.connect(g);
+      g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(v, t + .008);
+      g.gain.setValueAtTime(v, t + len * .6); g.gain.exponentialRampToValueAtTime(.0001, t + len + .08);
+      bus(g, 0);
+    },
+    kick(t, v = .85) {
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.type = 'sine'; o.frequency.setValueAtTime(150, t); o.frequency.exponentialRampToValueAtTime(44, t + .14);
+      o.start(t); o.stop(t + .45); o.connect(g); decayEnv(g, t, v, .42, .002); bus(g, 0);
+    },
+    snare(t, v = .22) {
+      const g = ac.createGain(), bp = filt('bandpass', 1900, .8), tg = ac.createGain();
+      noise(t, t + .22).connect(bp); bp.connect(g); decayEnv(g, t, v, .18, .002);
+      osc('triangle', 185, t, t + .12).connect(tg); decayEnv(tg, t, v * .6, .09, .002); tg.connect(g);
+      bus(g, .15);
+    },
+    hat(t, v = .06, len = .045) {
+      const g = ac.createGain(), hp = filt('highpass', 7800, .5);
+      noise(t, t + len + .05).connect(hp); hp.connect(g); decayEnv(g, t, v, len, .001); bus(g, .05);
+    },
+    crash(t, v = .16) {
+      const g = ac.createGain(), hp = filt('highpass', 4200, .4);
+      noise(t, t + 2.1).connect(hp); hp.connect(g); decayEnv(g, t, v, 2, .003); bus(g, .4);
+    },
+    riser(t, dur, v = .14) {
+      const g = ac.createGain(), bp = filt('bandpass', 250, 1.6), end = t + dur;
+      bp.frequency.setValueAtTime(250, t); bp.frequency.exponentialRampToValueAtTime(6500, end);
+      noise(t, end + .05).connect(bp);
+      bp.connect(g);
+      g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(v, end - .02);
+      g.gain.setValueAtTime(v, end - .02); g.gain.linearRampToValueAtTime(0, end);
+      bus(g, .3);
+    },
+  };
+}
+
+/* chord voicings (MIDI) and bass roots */
+const CH = {
+  D: [62, 66, 69, 73], Bm: [59, 62, 66, 69], G: [55, 59, 62, 66], A: [57, 62, 64, 69], Aa: [57, 61, 64, 69],
+  Em: [59, 62, 64, 67], Acs: [61, 64, 69, 73],
+};
+const ROOT = { D: 50, Bm: 47, G: 43, A: 45, Aa: 45, Em: 40, Acs: 49 };
+// [bar, beat, chord, beats]
+const HARMONY = [
+  [1, 1, 'D', 4], [2, 1, 'Bm', 4], [3, 1, 'G', 4], [4, 1, 'A', 4],
+  [5, 1, 'D', 4], [6, 1, 'Bm', 4], [7, 1, 'G', 4], [8, 1, 'A', 4],
+  [9, 1, 'D', 2], [9, 3, 'Bm', 2], [10, 1, 'G', 2], [10, 3, 'Aa', 2],
+  [11, 1, 'Em', 4], [12, 1, 'Aa', 3],
+  [13, 1, 'D', 2], [13, 3, 'Acs', 2], [14, 1, 'Bm', 2], [14, 3, 'G', 2],
+  [15, 1, 'G', 4], [16, 1, 'A', 2], [16, 3, 'Aa', 2], [17, 1, 'D', 8],
+];
+// melody: [bar, sixteenth, midi, lengthInSixteenths]
+const THEME = [
+  [5, 0, 74, 4], [5, 4, 69, 2], [5, 6, 71, 2], [5, 8, 66, 6], [5, 14, 69, 2],
+  [6, 0, 71, 4], [6, 4, 74, 2], [6, 6, 73, 2], [6, 8, 71, 4], [6, 12, 66, 4],
+  [7, 0, 74, 4], [7, 4, 76, 2], [7, 6, 74, 2], [7, 8, 71, 4], [7, 12, 67, 4],
+  [8, 0, 69, 6], [8, 6, 71, 2], [8, 8, 73, 4], [8, 12, 76, 4],
+];
+const HOOK = [
+  [13, 0, 86, 4], [13, 4, 81, 2], [13, 6, 83, 2], [13, 8, 81, 4], [13, 12, 76, 2], [13, 14, 78, 2],
+  [14, 0, 83, 4], [14, 4, 86, 2], [14, 6, 85, 2], [14, 8, 83, 4], [14, 12, 79, 2], [14, 14, 81, 2],
+];
+
+function compose(S) {
+  const E = [], ev = (t, fn) => E.push({ t, fn });
+  const s16 = SPB / 4;
+
+  // pads
+  HARMONY.forEach(([bar, beat, ch, beats]) => {
+    const t = at(bar, beat), dur = beats * SPB;
+    const lvl = bar <= 2 ? .02 : bar <= 10 ? .024 : bar <= 12 ? .028 : bar <= 14 ? .032 : bar <= 16 ? .028 : .022;
+    const rel = bar === 12 ? .04 : bar >= 17 ? 3.5 : .8;
+    ev(t, T => S.pad(T, CH[ch], dur, lvl, rel, bar >= 13 && bar <= 14 ? .08 : .45));
+  });
+
+  // bass & arpeggio
+  const ARP = [0, 1, 2, 3, 2, 1, 2, 3];
+  HARMONY.forEach(([bar, beat, ch, beats]) => {
+    const t = at(bar, beat), r = ROOT[ch], tones = CH[ch].map(m => m + 12);
+    if (bar >= 3 && bar <= 4) ev(t, T => S.bass(T, r, beats * SPB * .95, .16));
+    if (bar >= 5 && bar <= 8) for (let q = 0; q < beats; q++) ev(t + q * SPB, T => S.bass(T, r, SPB * .7, .18));
+    if (bar >= 9 && bar <= 14) for (let e = 0; e < beats * 2; e++) ev(t + e * SPB / 2, T => S.bass(T, r, SPB * .4, e % 2 ? .14 : .19));
+    if (bar === 16) ev(t, T => S.bass(T, r, beats * SPB * .95, .15));
+    if (bar === 17) ev(t, T => S.bass(T, r, 4 * SPB, .14));
+    // arps
+    const step = bar === 11 || bar === 12 ? s16 : SPB / 2;
+    if (bar >= 3 && bar <= 14) {
+      const n = Math.round(beats * SPB / step);
+      for (let i = 0; i < n; i++) {
+        const v = bar >= 11 && bar <= 12 ? .045 + .03 * ((bar - 11) * 16 + i) / 28 : bar >= 13 ? .04 : .055;
+        const m = tones[ARP[i % 8]] + (bar >= 13 ? 12 : 0);
+        ev(t + i * step, T => S.pluck(T, m, .12, v, .25));
+      }
+    }
+  });
+  [[15, 1], [15, 2], [15, 3]].forEach(([bar, beat]) => ev(at(bar, beat), T => S.bass(T, 43, .35, .2)));
+
+  // cold open motif  D5 · A4 · B4 · F#4
+  [[1, 1, 74, .2], [1, 3, 69, .12], [2, 1, 71, .18], [2, 3, 66, .12]].forEach(([bar, beat, m, v]) =>
+    ev(at(bar, beat), T => { S.pluck(T, m, 1.1, v, .5); S.bell(T, m + 12, v * .25, 1.6); }));
+
+  // melodies
+  THEME.forEach(([bar, s, m, l]) => ev(at(bar) + s * s16, T => S.pluck(T, m, l * s16, .16, .3)));
+  HOOK.forEach(([bar, s, m, l]) => ev(at(bar) + s * s16, T => { S.pluck(T, m, l * s16, .13, .35); S.bell(T, m, .05, 1.2); }));
+  [[9, 1, 78], [9, 3, 76], [10, 1, 74], [10, 3, 76]].forEach(([bar, beat, m]) => ev(at(bar, beat), T => S.bell(T, m, .12, 1.4)));
+  ev(at(12), T => S.bell(T, 81, .1, 1.2));
+  [[15, 1, 74], [15, 2, 78], [15, 3, 81]].forEach(([bar, beat, m]) => ev(at(bar, beat), T => S.bell(T, m, .15, 2.6)));
+  ev(at(16), T => S.bell(T, 86, .08, 3));
+  ev(at(17), T => S.pluck(T, 74, 1.2, .16, .5));
+  ev(at(17, 3), T => S.pluck(T, 69, 1.2, .12, .5));
+  ev(at(18), T => { S.bell(T, 74, .14, 4.5); S.bell(T, 62, .1, 4.5); });
+
+  // drums
+  for (let bar = 3; bar <= 15; bar++) for (let beat = 1; beat <= 4; beat++) {
+    const t = at(bar, beat);
+    if (bar === 12 && beat === 4) continue;           // the pause
+    if (bar === 15 && beat === 4) continue;
+    ev(t, T => S.kick(T, bar <= 4 ? .6 : .85));
+    if ((bar >= 5 && bar <= 10) || (bar >= 13 && bar <= 14)) ev(t + SPB / 2, T => S.hat(T, .055));
+    if (bar >= 13 && bar <= 14) { ev(t + s16, T => S.hat(T, .025)); ev(t + 3 * s16, T => S.hat(T, .025)); }
+    if (((bar >= 9 && bar <= 10) || (bar >= 13 && bar <= 14)) && beat % 2 === 0) ev(t, T => S.snare(T, .2));
+  }
+  for (let i = 0; i < 8; i++) ev(at(11) + i * SPB / 2, T => S.snare(T, .06 + i * .012));
+  for (let i = 0; i < 12; i++) ev(at(12) + i * s16, T => S.snare(T, .1 + i * .012));
+  ev(at(4, 4), T => S.riser(T, SPB, .07));
+  ev(at(11), T => S.riser(T, SPB * 7, .12));
+  ev(at(5), T => S.crash(T, .1));
+  ev(at(13), T => S.crash(T, .18));
+  ev(at(15), T => S.crash(T, .09));
+
+  return E.sort((p, q) => p.t - q.t);
+}
+
+/* =====================================================================
+   PLAYBACK — look-ahead scheduler + rAF renderer on one clock
+   ===================================================================== */
+let ac = null, synth = null, events = [], qi = 0, start = 0, timer = 0, raf = 0, playing = false;
+const intro = document.getElementById('intro');
+const replay = document.getElementById('replay');
+
+function schedule() {
+  const horizon = ac.currentTime + .6;
+  while (qi < events.length && start + events[qi].t < horizon) {
+    const e = events[qi++];
+    e.fn(Math.max(start + e.t, ac.currentTime));
+  }
+  if (qi >= events.length) { clearInterval(timer); timer = 0; }
+}
+
+function now() { return ac.currentTime - start - (ac.outputLatency || 0); }
+
+function frame() {
+  const t = now();
+  render(t);
+  if (t >= DURATION) {
+    replay.classList.add('show'); replay.tabIndex = 0;
+    if (t > DURATION + .5) { playing = false; replay.focus({ preventScroll: true }); return; }
+  }
+  raf = requestAnimationFrame(frame);
+}
+
+async function play() {
+  if (!ac) {
+    ac = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'playback' });
+    synth = Synth(ac);
+    events = compose(synth);
+  }
+  if (ac.state !== 'running') await ac.resume();
+  cancelAnimationFrame(raf); clearInterval(timer);
+  replay.classList.remove('show'); replay.tabIndex = -1;
+  intro.classList.add('gone');
+  qi = 0; start = ac.currentTime + .15; playing = true;
+  schedule(); timer = setInterval(schedule, 50);
+  raf = requestAnimationFrame(frame);
+}
+
+document.getElementById('play').addEventListener('click', play);
+replay.addEventListener('click', play);
+
+build();
+render(-1);
+
+// Debug / screenshot hook: ?t=12.5 renders that frame silently (add &rm to preview reduced motion)
+if (params.has('t')) {
+  const t = parseFloat(params.get('t')) || 0;
+  intro.classList.add('gone');
+  render(t);
+  if (t >= DURATION) replay.classList.add('show');
+}
+
+// Offline render for level checks (not used during playback)
+async function renderOffline() {
+  const oac = new OfflineAudioContext(2, Math.ceil(44100 * (DURATION + 4)), 44100);
+  const S = Synth(oac);
+  compose(S).forEach(e => e.fn(e.t + .05));
+  const buf = await oac.startRendering();
+  let peak = 0, sum = 0; const d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) { const a = Math.abs(d[i]); if (a > peak) peak = a; sum += d[i] * d[i]; }
+  const rmsAt = (s0, s1) => { let q = 0; const a = Math.floor(s0 * 44100), z = Math.floor(s1 * 44100); for (let i = a; i < z; i++) q += d[i] * d[i]; return Math.sqrt(q / (z - a)); };
+  return { peak, rms: Math.sqrt(sum / d.length), pause: rmsAt(at(12, 4) + .12, at(13) - .01), drop: rmsAt(at(13), at(13) + .5) };
+}
+
+window.PV = { BPM, SPB, BAR, DURATION, at, render, renderOffline, reducedMotion: RM };
+})();
+</script>
+</body>
+</html>
