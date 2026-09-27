@@ -48,6 +48,119 @@ button{font:inherit;color:inherit}
 #lost{position:fixed;inset:0;display:none;place-items:center;background:rgba(5,7,12,.8);z-index:55}
 #lost.show{display:grid}
 #lost button{padding:12px 20px;border-radius:10px;border:1px solid var(--line2);background:var(--panel);cursor:pointer}
+
+/* ---------- UI (M4) ---------- */
+[hidden]{display:none!important}
+body.map #board,body.map #hint{opacity:0;pointer-events:none;transform:translateY(12px)}
+#ui{position:fixed;inset:0;pointer-events:none;z-index:10;transition:opacity .4s ease}
+#ui.hidden > *:not(#toolbar):not(#toast){opacity:0;pointer-events:none!important}
+#ui > *{pointer-events:auto}
+#ui #labels,#ui #hint,#ui #toast,#ui #credit{pointer-events:none}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;backdrop-filter:blur(14px) saturate(120%);-webkit-backdrop-filter:blur(14px) saturate(120%);box-shadow:0 10px 40px rgba(0,0,0,.35)}
+.kicker{font:600 10px/1.2 var(--mono);letter-spacing:.2em;color:var(--dim);text-transform:uppercase}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+button{cursor:pointer}
+
+/* departures board */
+#board{position:absolute;left:max(16px,env(safe-area-inset-left));bottom:max(16px,env(safe-area-inset-bottom));width:min(468px,calc(100vw - 32px));padding:14px 14px 10px;transition:transform .35s ease,opacity .35s ease}
+.bhead{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;padding:0 4px 10px;border-bottom:1px solid var(--line)}
+.btitle{font-size:17px;font-weight:600;margin-top:5px;letter-spacing:.02em}
+.btitle span{font:600 11px/1 var(--mono);letter-spacing:.16em;color:var(--dim);margin-left:6px}
+#clock{font-size:13px;color:var(--dim)}
+#rows{list-style:none;margin:6px 0 0;padding:0}
+.row{display:grid;grid-template-columns:28px 52px 1fr 86px 58px;align-items:center;gap:8px;padding:8px 6px;border-radius:9px;cursor:pointer;position:relative;outline:none}
+.row:hover,.row:focus-visible{background:rgba(255,255,255,.06)}
+.row.following{background:rgba(255,255,255,.08)}
+.row.following::before{content:"";position:absolute;left:0;top:7px;bottom:7px;width:3px;border-radius:2px;background:var(--lc)}
+.badge{width:24px;height:24px;border-radius:50%;background:var(--lc);color:#07090d;display:grid;place-items:center;font:700 12px/1 var(--font);box-shadow:0 0 12px -2px var(--lc)}
+.row .no{font:600 13px/1 var(--mono);color:var(--ink)}
+.row .dest{font-size:13px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row small{display:block;font-size:10.5px;color:var(--dim);margin-top:2px;overflow:hidden;text-overflow:ellipsis}
+.row .status{font-size:12px;line-height:1.2;color:#c9d2de}
+.row .status.live{color:var(--lc)}
+.row .cd{font:600 16px/1 var(--mono);text-align:right;font-variant-numeric:tabular-nums}
+.bfoot{font-size:11px;color:var(--faint);padding:8px 6px 2px;border-top:1px solid var(--line);margin-top:6px}
+.pill{display:none}
+
+/* toolbar */
+#toolbar{position:absolute;top:max(16px,env(safe-area-inset-top));right:max(16px,env(safe-area-inset-right));display:flex;gap:8px}
+#toolbar button{width:44px;height:44px;border-radius:12px;border:1px solid var(--line);background:var(--panel);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);display:grid;place-items:center;color:var(--ink);font:600 15px/1 var(--font);transition:background .2s,border-color .2s}
+#toolbar button:hover{background:rgba(24,30,42,.8);border-color:var(--line2)}
+#toolbar button:focus-visible{outline:2px solid var(--p);outline-offset:2px}
+#toolbar button[aria-pressed="true"]{border-color:rgba(54,201,255,.5);background:rgba(54,201,255,.12)}
+#toolbar svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+#btnSound svg path:first-child{fill:currentColor;stroke:none}
+#btnSound .on{display:none}#btnSound[aria-pressed="true"] .on{display:inline}#btnSound[aria-pressed="true"] .off{display:none}
+#btnMap svg circle{fill:currentColor;stroke:none}
+
+#help{position:absolute;top:calc(max(16px,env(safe-area-inset-top)) + 56px);right:max(16px,env(safe-area-inset-right));width:min(340px,calc(100vw - 32px));padding:16px 18px}
+#help h3{margin:0 0 10px;font-size:15px}#help h3 span{font:600 11px var(--mono);color:var(--dim);letter-spacing:.14em;margin-left:6px}
+#help dl{display:grid;grid-template-columns:auto 1fr;gap:7px 14px;margin:0;font-size:12.5px}
+#help dt{color:var(--dim)}#help dd{margin:0}
+#help .fine{font-size:11px;color:var(--faint);margin:12px 0 0;line-height:1.5}
+
+/* core panel */
+#corePanel{position:absolute;right:max(16px,env(safe-area-inset-right));top:calc(max(16px,env(safe-area-inset-top)) + 56px);width:min(320px,calc(100vw - 32px));padding:14px 16px 14px}
+.chead{display:flex;justify-content:space-between;align-items:flex-start}
+.ctitle{font-size:17px;font-weight:600;margin-top:5px}
+.x{width:32px;height:32px;border-radius:9px;border:1px solid var(--line);background:transparent;color:var(--dim);font-size:18px;line-height:1}
+.x:hover{color:var(--ink);border-color:var(--line2)}
+.load{display:flex;align-items:baseline;gap:4px;margin:12px 0 2px}
+#loadPct{font-size:46px;font-weight:600;letter-spacing:-.02em;line-height:1}
+.pct{font-size:20px;color:var(--dim)}
+.tag{margin-left:auto;font-size:11px;padding:4px 8px;border-radius:99px;border:1px solid var(--line2);color:#ffb08a}
+.tag.oc{color:#fff;border-color:#ff7a3d;background:rgba(255,90,20,.18)}
+.meta{font-size:12px;color:var(--dim)}.meta b{color:var(--ink);font-weight:600}.sep{margin:0 6px;color:var(--faint)}
+#spark{width:100%;height:48px;margin:10px 0 6px;display:block}
+.slider{display:block}.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+#loadSlider{width:100%;appearance:none;-webkit-appearance:none;height:28px;background:transparent;margin:0}
+#loadSlider::-webkit-slider-runnable-track{height:6px;border-radius:3px;background:linear-gradient(90deg,#3a0a04,#b02000 35%,#ff5a10 77%,#ffb070)}
+#loadSlider::-moz-range-track{height:6px;border-radius:3px;background:linear-gradient(90deg,#3a0a04,#b02000 35%,#ff5a10 77%,#ffb070)}
+#loadSlider::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;background:#f4f6fa;margin-top:-8px;box-shadow:0 0 0 4px rgba(255,90,20,.25)}
+#loadSlider::-moz-range-thumb{width:22px;height:22px;border-radius:50%;background:#f4f6fa;border:none}
+.ticks{display:flex;justify-content:space-between;font:10px var(--mono);color:var(--faint);margin-top:2px}.ticks .oc{color:#ff9a60}
+.crow{display:flex;align-items:center;gap:10px;margin-top:12px}
+#autoBtn{padding:8px 12px;border-radius:9px;border:1px solid var(--line2);background:transparent;color:var(--ink);font-size:12px}
+#autoBtn[aria-pressed="true"]{background:rgba(255,255,255,.1)}
+.hint{font-size:11px;color:var(--faint)}
+
+/* route map */
+#legend{position:absolute;right:max(16px,env(safe-area-inset-right));bottom:max(16px,env(safe-area-inset-bottom));width:min(300px,calc(100vw - 32px));padding:14px 16px}
+#legend ul{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:9px}
+#legend li{display:grid;grid-template-columns:24px auto 1fr;gap:8px;align-items:center;font-size:12.5px}
+#legend i{font-style:normal;width:22px;height:22px;border-radius:50%;background:var(--lc);color:#07090d;display:grid;place-items:center;font-weight:700;font-size:11px;box-shadow:0 0 14px -3px var(--lc)}
+#legend span{color:var(--dim);font-size:11.5px}
+#labels{position:absolute;inset:0;overflow:hidden}
+.lbl{position:absolute;transform:translate(-50%,-50%);white-space:nowrap;font-size:12px;font-weight:600;padding:3px 8px;border-radius:99px;background:rgba(5,7,12,.72);border:1px solid var(--lc,rgba(255,255,255,.2));color:var(--ink);opacity:0;transition:opacity .2s}
+.lbl small{font:500 10px var(--mono);color:var(--dim);margin-left:5px;letter-spacing:.06em}
+
+#hint{position:absolute;left:50%;bottom:max(18px,env(safe-area-inset-bottom));transform:translateX(-50%);font-size:12px;color:var(--dim);background:rgba(5,7,12,.55);padding:7px 12px;border-radius:99px;border:1px solid var(--line);transition:opacity 1.2s ease;white-space:nowrap}
+#hint.gone{opacity:0}
+#toast{position:absolute;left:50%;top:max(18px,env(safe-area-inset-top));transform:translate(-50%,-8px);padding:9px 14px;border-radius:10px;background:var(--panel);border:1px solid var(--line2);font-size:13px;opacity:0;transition:opacity .3s,transform .3s}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+#followTag{position:absolute;left:50%;top:max(16px,env(safe-area-inset-top));transform:translateX(-50%);display:flex;align-items:center;gap:10px;padding:7px 8px 7px 14px;border-radius:99px;background:var(--panel);border:1px solid var(--line2);font-size:13px;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+#followTag .dot,.pill .dot{width:8px;height:8px;border-radius:50%;background:var(--lc,#fff);box-shadow:0 0 10px var(--lc,#fff)}
+#followExit{padding:6px 10px;border-radius:99px;border:1px solid var(--line2);background:transparent;color:var(--ink);font-size:12px}
+#credit{position:absolute;right:max(16px,env(safe-area-inset-right));bottom:max(8px,env(safe-area-inset-bottom));font-size:10.5px;color:var(--faint);letter-spacing:.04em}
+body.map #credit{display:none}
+#fps{position:absolute;left:16px;top:16px;font:12px var(--mono);color:var(--dim);background:rgba(0,0,0,.4);padding:4px 8px;border-radius:6px;pointer-events:none}
+
+@media (max-width: 720px), (max-height: 520px){
+  #board{width:auto;right:16px;padding:10px 10px 8px}
+  #board.collapsed{padding:0;background:transparent;border:none;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none;right:auto}
+  #board.collapsed > :not(.pill){display:none}
+  .pill{display:flex;align-items:center;gap:8px;height:44px;padding:0 14px;border-radius:99px;border:1px solid var(--line2);background:var(--panel);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);color:var(--ink);font:13px var(--font)}
+  #board:not(.collapsed) .pill{position:absolute;right:10px;top:10px;height:32px;padding:0 10px;font-size:12px}
+  .row{grid-template-columns:24px 46px 1fr 70px 52px;gap:6px;padding:7px 4px}
+  .row .cd{font-size:14px}
+  #corePanel{left:16px;right:16px;width:auto;top:auto;bottom:max(16px,env(safe-area-inset-bottom))}
+  #legend{left:16px;right:16px;width:auto;bottom:max(16px,env(safe-area-inset-bottom));padding:10px 14px}
+  #legend ul{grid-template-columns:1fr 1fr;gap:6px 10px}#legend li span{display:none}
+  #hint{bottom:calc(max(16px,env(safe-area-inset-bottom)) + 56px);font-size:11px}
+  #credit{bottom:auto;top:calc(max(16px,env(safe-area-inset-top)) + 52px);right:max(16px,env(safe-area-inset-right));font-size:10px}
+  #toolbar{gap:6px}
+}
+@media (prefers-reduced-motion: reduce){#board,#hint,#toast{transition:none}}
 </style>
 </head>
 <body>
@@ -74,6 +187,77 @@ button{font:inherit;color:inherit}
 </div>
 
 <div id="lost"><button type="button" onclick="location.reload()">繪圖環境中斷，點此重新載入 · Reload</button></div>
+
+<!-- ================= UI (M4) ================= -->
+<div id="ui">
+  <section id="board" class="panel" aria-label="發車資訊 Departures">
+    <header class="bhead">
+      <div>
+        <div class="kicker">OPUS 軌道總站 · ORBITAL TERMINAL</div>
+        <div class="btitle">發車資訊 <span>DEPARTURES</span></div>
+      </div>
+      <time id="clock" class="mono">--:--:--</time>
+    </header>
+    <ol id="rows"></ol>
+    <footer class="bfoot">點選列車即可跟隨，再點一次返回 · Tap a train to follow</footer>
+    <button id="boardToggle" class="pill" type="button" aria-expanded="false"><span class="dot"></span><span id="pillText">下一班 Next</span></button>
+  </section>
+
+  <nav id="toolbar" aria-label="工具列 Toolbar">
+    <button id="btnSound" type="button" aria-pressed="false" title="音效 Sound (M)"><svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4z"/><path class="on" d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12"/><path class="off" d="M16.5 9.5l5 5M21.5 9.5l-5 5"/></svg></button>
+    <button id="btnMap" type="button" aria-pressed="false" title="路線圖模式 Route map (L)"><svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.2"/><circle cx="18" cy="18" r="2.2"/><circle cx="18" cy="6" r="2.2"/><path d="M6 8.2V13a5 5 0 0 0 5 5h4.8M8.2 6h7.6"/></svg></button>
+    <button id="btnQuality" type="button" title="畫質 Quality"><span id="qLabel">高</span></button>
+    <button id="btnReset" type="button" title="回預設視角 Reset view (R)"><svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.4-5.7M4 4v4.5h4.5"/></svg></button>
+    <button id="btnHide" type="button" title="隱藏介面 Hide UI (H)"><svg viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
+    <button id="btnHelp" type="button" title="操作說明 Help (?)" aria-expanded="false"><span>?</span></button>
+  </nav>
+
+  <section id="help" class="panel" hidden>
+    <h3>操作 <span>Controls</span></h3>
+    <dl>
+      <dt>拖曳 · 單指</dt><dd>旋轉視角 Orbit</dd>
+      <dt>滾輪 · 雙指捏合</dt><dd>縮放 Zoom</dd>
+      <dt>右鍵 / Shift 拖曳 · 雙指拖曳</dt><dd>平移 Pan</dd>
+      <dt>雙擊 · 點兩下</dt><dd>飛到該處 Fly to</dd>
+      <dt>點列車 / 看板</dt><dd>跟隨列車 Follow a train</dd>
+      <dt>點算力中心</dt><dd>負載面板 Core load panel</dd>
+      <dt>L · M · H · R · Esc</dt><dd>路線圖 · 音效 · 介面 · 重設 · 返回</dd>
+    </dl>
+    <p class="fine">時刻表依 UTC 真實時間運行，任何人同一時刻看到同一班車。<br>Timetable runs on real UTC time.</p>
+  </section>
+
+  <section id="corePanel" class="panel" hidden aria-label="算力中心 Compute core">
+    <header class="chead">
+      <div><div class="kicker">EXP · EXPERIMENTAL CORE</div><div class="ctitle">實驗算力中心</div></div>
+      <button id="coreClose" class="x" type="button" title="關閉 Close">×</button>
+    </header>
+    <div class="load"><span id="loadPct" class="mono">45</span><span class="pct">%</span><span id="loadTag" class="tag">一般 Nominal</span></div>
+    <div class="meta">鰭片根部 <b id="finK" class="mono">920 K</b><span class="sep">·</span>數據流入 <b id="inflow" class="mono">3.1</b> 包/s</div>
+    <canvas id="spark" width="560" height="96" aria-hidden="true"></canvas>
+    <label class="slider"><span class="sr">手動負載 Manual load</span>
+      <input id="loadSlider" type="range" min="0" max="130" step="1" value="45">
+    </label>
+    <div class="ticks"><span>0</span><span>50</span><span>100</span><span class="oc">超頻 130</span></div>
+    <div class="crow"><button id="autoBtn" type="button" aria-pressed="true">自動 Auto</button><span class="hint">拖曳滑桿，看散熱鰭片變亮</span></div>
+  </section>
+
+  <section id="legend" class="panel" hidden aria-label="路線圖 Route map">
+    <div class="kicker">ROUTE MAP · 路線圖</div>
+    <ul>
+      <li><i style="--lc:var(--c)">C</i><b>貨運線</b><span>Cargo · 貨物，長重慢</span></li>
+      <li><i style="--lc:var(--p)">P</i><b>客運線</b><span>Passenger · 旅客，短快準點</span></li>
+      <li><i style="--lc:var(--d)">D</i><b>數據線</b><span>Data · AI 資料光脈衝，流入核心</span></li>
+      <li><i style="--lc:var(--x)">X</i><b>通訊線</b><span>Comms · 天線向深空發射訊息</span></li>
+    </ul>
+  </section>
+  <div id="labels" aria-hidden="true"></div>
+
+  <div id="hint">拖曳旋轉 · 滾輪縮放 · 右鍵平移 · 雙擊前往 · 點列車跟隨</div>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <div id="followTag" hidden><span class="dot"></span><span id="followText"></span><button id="followExit" type="button">返回 Back</button></div>
+  <div id="credit">非官方同人作品 · Unofficial fan work · Opus 5.5 experimental</div>
+  <div id="fps" hidden></div>
+</div>
 
 <script>
 'use strict';
@@ -756,6 +940,7 @@ void main() {
     col += uSunCol.rgb * (disc * 2500.0 + exp(-a * 140.0) * 1.2 + exp(-a * 22.0) * 0.03);
   }
   col = col * T + pc;
+  col *= 1.0 - 0.82 * uMisc.z;
   o = vec4(col, 1.0);
 }`;
 let bgProg;
@@ -1276,7 +1461,11 @@ void main() {
   float hl = max(dot(N, dl * inversesqrt(d2 + 1e-4)), 0.0);
   col += kd * m.albedo / PI * uHeat.rgb * hl * 9000.0 / (d2 + 900.0) * (id == 5 ? 0.05 : 1.0);
 
-  col += m.emis;
+  // route-map mode: the station recedes to a dark silhouette, the lines stay lit
+  float mk = uMisc.z;
+  float keep = (id == 8 || id == 16 || id == 18) ? 1.0 : 0.0;
+  col = mix(col, vec3(dot(col, vec3(0.2126, 0.7152, 0.0722))) * 0.22, mk * 0.92);
+  col += m.emis * mix(1.0, keep * 1.5 + (1.0 - keep) * 0.12, mk);
   o = vec4(col, 1.0);
 }`;
 
@@ -2143,7 +2332,7 @@ void main() {
 let compProg;
 
 // =====================================================================
-//  15. Trains and timetable (design doc §7). Everything is a function of
+//  11b. Trains and timetable (design doc §7). Everything is a function of
 //      station time, so every visitor sees the same train in the same place.
 // =====================================================================
 /** Uniformly resampled polyline with arc-length lookup. */
@@ -2652,6 +2841,7 @@ function simulate(t, dt) {
       if (prevState[key] !== undefined && prevState[key] !== st) trainEvents.push({ li, n: tr.n, state: st, pos: head.p, t });
       prevState[key] = st;
       info.state = st; info.head = head.p; info.speed = speed;
+      if (cam.map > 0.01) fx.add(head.p, v3.madd(head.p, head.T, -Math.min(SL.trainLen, 240)), 6, v3.lerp(LINE_LIN[li], [1, 1, 1], 0.35), 30 * cam.map, 0.2, null, 9 * cam.map);
       SIM.trains.push(info);
     }
   }
@@ -2775,57 +2965,669 @@ function simulateBeam(t) {
 }
 
 // =====================================================================
-//  12. Camera (orbit with inertia; the full controller arrives in M4)
+//  12. Camera: inertial orbit, pan, pinch, fly-to, follow, route-map view
 // =====================================================================
+const HOME = { target: [280, -10, 20], dist: 1150, yaw: 0.30, pitch: 0.24 };
+if (innerWidth / Math.max(1, innerHeight) < 0.8) Object.assign(HOME, { target: [120, 0, 40], dist: 2100, yaw: 0.38, pitch: 0.34 });
 const cam = {
-  target: [280, -10, 20], dist: 1150, yaw: 0.30, pitch: 0.24, fov: 45 * Math.PI / 180,
-  vYaw: 0, vPitch: 0, vZoom: 0,
-  eye: [0, 0, 0], view: null, proj: null,
+  target: HOME.target.slice(), dist: HOME.dist, yaw: HOME.yaw, pitch: HOME.pitch, fov: 45 * Math.PI / 180,
+  vYaw: 0, vPitch: 0, vPan: [0, 0, 0], distGoal: HOME.dist,
+  tween: null, follow: null, saved: null, map: 0, mapOn: false,
+  eye: [0, 0, 0], view: null, proj: null, vp: null,
 };
 const SHOTS = {
-  hero:   { target: [280, -10, 20], dist: 1150, yaw: 0.30, pitch: 0.24 },
-  planet: { target: [-200, 0, 0], dist: 900, yaw: 1.35, pitch: 0.06 },
-  deep:   { target: [700, 60, 0], dist: 900, yaw: -1.75, pitch: 0.12 },
-  gate:   { target: [1080, 90, -400], dist: 260, yaw: 0.9, pitch: 0.12 },
-  core:   { target: [0, 20, 0], dist: 420, yaw: 0.5, pitch: 0.12 },
-  map:    { target: [300, 0, 0], dist: 2600, yaw: 0.0, pitch: 1.5 },
+  hero:   HOME,
+  planet: { target: [-300, 60, 0], dist: 700, yaw: -1.05, pitch: -0.05 },
+  deep:   { target: [900, 60, 0], dist: 1100, yaw: -1.6, pitch: 0.16 },
+  gate:   { target: [1090, 90, -400], dist: 230, yaw: 1.0, pitch: 0.14 },
+  core:   { target: [0, 25, 0], dist: 430, yaw: 0.55, pitch: 0.16 },
+  map:    { target: [340, 0, 30], dist: 2500, yaw: 0.0, pitch: 1.53 },
+  sango:  { target: [-306, 94, 0], dist: 28, yaw: 1.25, pitch: 0.1 },
   sky:    { target: [0, 0, 0], dist: 10, yaw: 2.0, pitch: -0.3 },
 };
-if (SHOT && SHOTS[SHOT]) Object.assign(cam, SHOTS[SHOT]);
+if (SHOT && SHOTS[SHOT]) { Object.assign(cam, JSON.parse(JSON.stringify(SHOTS[SHOT]))); cam.distGoal = cam.dist; }
 if (QS.has('fov')) cam.fov = parseFloat(QS.get('fov')) * Math.PI / 180;
 if (QS.has('cam')) { // ?cam=yaw,pitch,dist,tx,ty,tz (degrees for angles)
   const c = QS.get('cam').split(',').map(parseFloat);
-  cam.yaw = c[0] * Math.PI / 180; cam.pitch = c[1] * Math.PI / 180; cam.dist = c[2];
+  cam.yaw = c[0] * Math.PI / 180; cam.pitch = c[1] * Math.PI / 180; cam.dist = cam.distGoal = c[2];
   if (c.length >= 6) cam.target = [c[3], c[4], c[5]];
+}
+const pose = () => ({ target: cam.target.slice(), dist: cam.dist, yaw: cam.yaw, pitch: cam.pitch });
+const easeIO = (x) => x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+const wrapPI = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+/** Smoothly move to a pose; `to` may be a function (moving goal, e.g. a train). */
+function flyTo(to, dur = 1.3) {
+  cam.tween = { from: pose(), to, t: 0, dur };
+  cam.vYaw = cam.vPitch = 0; cam.vPan = [0, 0, 0];
+}
+function applyPose(p) { cam.target = p.target.slice(); cam.dist = cam.distGoal = p.dist; cam.yaw = p.yaw; cam.pitch = p.pitch; }
+
+function followPose() {
+  const F = cam.follow;
+  const tr = SIM.trains && SIM.trains.find((q) => q.li === F.li && q.n === F.n);
+  if (!tr) return null;
+  const SL = SIMLINES[F.li];
+  const mid = SL.tr.at(tr.s - SL.trainLen * (F.li === 0 ? 0.25 : 0.4));
+  const a = SL.tr.at(tr.s + 6), b = SL.tr.at(tr.s - 6);
+  const heading = Math.atan2(-(a[0] - b[0]), -(a[2] - b[2])); // yaw that puts the eye behind the train
+  return { target: v3.add(mid, [0, 4, 0]), dist: F.dist, yaw: heading + F.yawOff, pitch: F.pitch };
+}
+function startFollow(li, n) {
+  if (cam.mapOn) setMap(false, true);
+  if (!cam.follow) cam.saved = pose();
+  cam.follow = { li, n, yawOff: 0.62, pitch: 0.2, dist: li === 0 ? 170 : 95 };
+  flyTo(followPose, 1.4);
+  UI.onFollow(true);
+}
+function stopFollow() {
+  if (!cam.follow) return;
+  cam.follow = null;
+  if (cam.saved) flyTo(cam.saved, 1.3);
+  cam.saved = null;
+  UI.onFollow(false);
+}
+function mapPose() {
+  const aspect = canvas.clientWidth / Math.max(1, canvas.clientHeight);
+  const vf = cam.fov, hf = 2 * Math.atan(Math.tan(vf / 2) * aspect);
+  const portrait = aspect < 1;
+  const ex = 2250, ez = 1150; // station extent (m)
+  const w = portrait ? ez : ex, h = portrait ? ex : ez;
+  const dist = Math.max(w / 2 / Math.tan(hf / 2), h / 2 / Math.tan(vf / 2)) * 1.12;
+  return { target: [330, 0, 25], dist, yaw: portrait ? -Math.PI / 2 : 0, pitch: 1.5 };
+}
+function setMap(on, silent) {
+  if (on === cam.mapOn) return;
+  cam.mapOn = on;
+  if (on) { if (cam.follow) { cam.follow = null; UI.onFollow(false); } cam.saved = pose(); flyTo(mapPose, 1.5); }
+  else { if (cam.saved && !silent) flyTo(cam.saved, 1.4); cam.saved = null; }
+  UI.onMap(on);
 }
 
 function updateCamera(dt) {
-  const k = Math.exp(-dt * 4.5);
-  cam.yaw += cam.vYaw * dt; cam.pitch += cam.vPitch * dt;
-  cam.dist *= Math.exp(cam.vZoom * dt);
-  cam.vYaw *= k; cam.vPitch *= k; cam.vZoom *= Math.exp(-dt * 7);
-  cam.pitch = clamp(cam.pitch, -1.35, 1.52);
-  cam.dist = clamp(cam.dist, 12, 7000);
+  // route-map blend
+  cam.map += ((cam.mapOn ? 1 : 0) - cam.map) * (1 - Math.exp(-dt * 3.2));
+  if (cam.tween) {
+    const T = cam.tween;
+    T.t += dt / T.dur;
+    const to = typeof T.to === 'function' ? T.to() : T.to;
+    if (!to) { cam.tween = null; }
+    else {
+      const k = easeIO(clamp(T.t, 0, 1));
+      cam.target = v3.lerp(T.from.target, to.target, k);
+      // zoom out a little mid-flight for long hops
+      const hop = v3.dist(T.from.target, to.target);
+      const lift = Math.sin(k * Math.PI) * Math.min(hop * 0.35, 900);
+      cam.dist = cam.distGoal = Math.exp(lerp(Math.log(T.from.dist), Math.log(to.dist), k)) + lift;
+      cam.yaw = T.from.yaw + wrapPI(to.yaw - T.from.yaw) * k;
+      cam.pitch = lerp(T.from.pitch, to.pitch, k);
+      if (T.t >= 1) cam.tween = null;
+    }
+  } else if (cam.follow) {
+    const p = followPose();
+    if (!p || SIM.trains.find((q) => q.li === cam.follow.li && q.n === cam.follow.n && q.s > SIMLINES[q.li].sGateOut + 3200)) {
+      toast('列車已駛離，返回原視角 · Train has left — returning');
+      stopFollow();
+    } else {
+      cam.follow.yawOff += cam.vYaw * dt; cam.follow.pitch = clamp(cam.follow.pitch + cam.vPitch * dt, -0.6, 1.3);
+      cam.follow.dist = clamp(cam.follow.dist * Math.exp(cam.zoomImpulse || 0), 25, 1500);
+      cam.zoomImpulse = 0;
+      const k = 1 - Math.exp(-dt * 6);
+      cam.target = p.target;
+      cam.yaw = cam.yaw + wrapPI(p.yaw - cam.yaw) * k;
+      cam.pitch = lerp(cam.pitch, p.pitch, k);
+      cam.dist = lerp(cam.dist, p.dist, k); cam.distGoal = cam.dist;
+    }
+  } else {
+    cam.yaw += cam.vYaw * dt; cam.pitch += cam.vPitch * dt;
+    cam.target = v3.madd(cam.target, cam.vPan, dt);
+    cam.dist = Math.exp(lerp(Math.log(cam.dist), Math.log(cam.distGoal), 1 - Math.exp(-dt * 7)));
+    cam.zoomImpulse = 0;
+  }
+  const k = Math.exp(-dt * 3.2);
+  cam.vYaw *= k; cam.vPitch *= k; cam.vPan = v3.mul(cam.vPan, Math.exp(-dt * 4.5));
+  cam.pitch = clamp(cam.pitch, -1.35, 1.53);
+  cam.distGoal = clamp(cam.distGoal, 12, 8000); cam.dist = clamp(cam.dist, 12, 12000);
+  // keep the station within reach when panning freely
+  if (!cam.follow) cam.target = [clamp(cam.target[0], -3000, 9000), clamp(cam.target[1], -1500, 1500), clamp(cam.target[2], -3000, 3000)];
   const cp = Math.cos(cam.pitch);
   cam.eye = v3.add(cam.target, [Math.sin(cam.yaw) * cp * cam.dist, Math.sin(cam.pitch) * cam.dist, Math.cos(cam.yaw) * cp * cam.dist]);
+  // never let the eye sink into the core
+  const hr = Math.hypot(cam.eye[0], cam.eye[2]);
+  if (hr < 42 && cam.eye[1] > -150 && cam.eye[1] < 180) { const s = 42 / Math.max(hr, 1e-3); cam.eye[0] *= s; cam.eye[2] *= s; }
 }
-let drag = null;
-canvas.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY, t: performance.now() }; canvas.setPointerCapture(e.pointerId); canvas.classList.add('dragging'); });
-canvas.addEventListener('pointermove', (e) => {
-  if (!drag) return;
-  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
-  const t = performance.now(), dt = Math.max(1, t - drag.t) / 1000;
-  const s = 2.6 / canvas.clientHeight;
-  cam.yaw -= dx * s; cam.pitch += dy * s;
-  cam.vYaw = lerp(cam.vYaw, -dx * s / dt, 0.5); cam.vPitch = lerp(cam.vPitch, dy * s / dt, 0.5);
-  drag.x = e.clientX; drag.y = e.clientY; drag.t = t;
+
+// ---------------------------------------------------------------------
+//  Picking: ray against simple proxies (no GPU read-back needed)
+// ---------------------------------------------------------------------
+function screenRay(x, y) {
+  const r = canvas.getBoundingClientRect();
+  const nx = (x - r.left) / r.width * 2 - 1, ny = 1 - (y - r.top) / r.height * 2;
+  const inv = m4.invert(cam.vp);
+  const a = m4.xform(inv, [nx, ny, -1]), b = m4.xform(inv, [nx, ny, 1]);
+  return { o: a, d: v3.norm(v3.sub(b, a)) };
+}
+function hitSphere(R, c, r) { const oc = v3.sub(R.o, c), b = v3.dot(oc, R.d), q = v3.dot(oc, oc) - r * r, h = b * b - q; if (h < 0) return Infinity; const t = -b - Math.sqrt(h); return t > 0 ? t : (-b + Math.sqrt(h) > 0 ? 0.01 : Infinity); }
+function hitCylY(R, cx, cz, r, y0, y1) {
+  const ox = R.o[0] - cx, oz = R.o[2] - cz, a = R.d[0] * R.d[0] + R.d[2] * R.d[2];
+  let best = Infinity;
+  if (a > 1e-9) {
+    const b = ox * R.d[0] + oz * R.d[2], q = ox * ox + oz * oz - r * r, h = b * b - a * q;
+    if (h >= 0) for (const t of [(-b - Math.sqrt(h)) / a, (-b + Math.sqrt(h)) / a]) { const y = R.o[1] + R.d[1] * t; if (t > 0 && y >= y0 && y <= y1) { best = Math.min(best, t); break; } }
+  }
+  for (const y of [y0, y1]) { if (Math.abs(R.d[1]) < 1e-9) continue; const t = (y - R.o[1]) / R.d[1]; if (t > 0) { const x = R.o[0] + R.d[0] * t - cx, z = R.o[2] + R.d[2] * t - cz; if (x * x + z * z <= r * r) best = Math.min(best, t); } }
+  return best;
+}
+function hitAnnulus(R, y, r0, r1, a0 = -Math.PI, a1 = Math.PI) {
+  if (Math.abs(R.d[1]) < 1e-9) return Infinity;
+  const t = (y - R.o[1]) / R.d[1]; if (t <= 0) return Infinity;
+  const x = R.o[0] + R.d[0] * t, z = R.o[2] + R.d[2] * t, r = Math.hypot(x, z), a = Math.atan2(z, x);
+  const inA = a0 <= a1 ? (a >= a0 && a <= a1) : (a >= a0 || a <= a1);
+  return r >= r0 && r <= r1 && inA ? t : Infinity;
+}
+function pick(x, y) {
+  const R = screenRay(x, y);
+  const hits = [];
+  const add = (t, kind, data) => { if (t < Infinity) hits.push({ t, kind, data }); };
+  for (const tr of SIM.trains || []) for (const c of tr.cars) add(hitSphere(R, c, tr.li === 0 ? 11 : 8), 'train', tr);
+  add(Math.min(hitCylY(R, 0, 0, 40, -150, 178), hitCylY(R, 0, 0, 155, 0, 60)), 'core');
+  if (ST.dome) add(hitSphere(R, ST.dome.c, ST.dome.r + 1), 'dome');
+  add(hitSphere(R, SANGO.pos, 3.5), 'sango');
+  add(hitAnnulus(R, -171, 285, 400), 'deck');
+  add(hitAnnulus(R, -171, 392, 560, 112 * Math.PI / 180, 158 * Math.PI / 180), 'yard');
+  add(hitAnnulus(R, 90, 240, 300, 155 * Math.PI / 180, -155 * Math.PI / 180), 'terminal');
+  add(hitAnnulus(R, 89, 243, 257), 'ploop');
+  add(hitAnnulus(R, -101, 333, 347), 'cloop');
+  add(hitCylY(R, -560, -50, 12, -180, 210), 'antenna');
+  add(hitSphere(R, ST.antenna.hub, 40), 'antenna');
+  for (const G of ST.gates) add(hitSphere(R, v3.add(G.c, [40, 0, 0]), G.R + 22), 'gate');
+  hits.sort((a, b) => a.t - b.t);
+  const h = hits[0];
+  if (!h) return null;
+  return { ...h, point: v3.madd(R.o, R.d, h.t) };
+}
+
+// ---------------------------------------------------------------------
+//  Pointer, touch and keyboard input
+// ---------------------------------------------------------------------
+const ptrs = new Map();
+let gesture = null, lastTap = { t: 0, x: 0, y: 0 };
+function panBy(dx, dy) {
+  // move the target in the camera plane, scaled by distance
+  const s = cam.dist * 1.1 / canvas.clientHeight;
+  const right = [Math.cos(cam.yaw), 0, -Math.sin(cam.yaw)];
+  const fwd = v3.norm(v3.sub(cam.target, cam.eye));
+  const up = v3.cross(right, fwd);
+  const d = v3.add(v3.mul(right, -dx * s), v3.mul(up, dy * s));
+  if (cam.follow) return;
+  cam.tween = null;
+  cam.target = v3.add(cam.target, d);
+  return d;
+}
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+canvas.addEventListener('pointerdown', (e) => {
+  canvas.focus({ preventScroll: true });
+  canvas.setPointerCapture(e.pointerId);
+  ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, t0: performance.now(), t: performance.now(), btn: e.button, shift: e.shiftKey });
+  canvas.classList.add('dragging');
+  if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; gesture = { d: Math.hypot(a.x - b.x, a.y - b.y), cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 }; }
+  UI.hideHint();
 });
-const endDrag = () => { drag = null; canvas.classList.remove('dragging'); };
-canvas.addEventListener('pointerup', endDrag); canvas.addEventListener('pointercancel', endDrag);
-canvas.addEventListener('wheel', (e) => { e.preventDefault(); cam.vZoom += clamp(e.deltaY, -120, 120) * 0.012; }, { passive: false });
+canvas.addEventListener('pointermove', (e) => {
+  const P = ptrs.get(e.pointerId);
+  if (!P) return;
+  const now = performance.now(), dt = Math.max(1, now - P.t) / 1000;
+  const dx = e.clientX - P.x, dy = e.clientY - P.y;
+  P.x = e.clientX; P.y = e.clientY; P.t = now;
+  if (ptrs.size >= 2) {
+    const [a, b] = [...ptrs.values()];
+    const d = Math.hypot(a.x - b.x, a.y - b.y), cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2;
+    if (gesture && d > 0) {
+      const z = gesture.d / d;
+      if (cam.follow) cam.zoomImpulse = Math.log(z); else { cam.tween = null; cam.distGoal *= z; cam.dist *= z; }
+      const pd = panBy(cx - gesture.cx, cy - gesture.cy);
+      if (pd) cam.vPan = v3.lerp(cam.vPan, v3.mul(pd, 1 / dt), 0.3);
+    }
+    gesture = { d, cx, cy };
+    return;
+  }
+  const pan = P.btn === 2 || P.btn === 1 || P.shift || e.shiftKey;
+  if (pan) { const pd = panBy(dx, dy); if (pd) cam.vPan = v3.lerp(cam.vPan, v3.mul(pd, 1 / dt), 0.35); return; }
+  const s = 2.8 / canvas.clientHeight;
+  if (cam.tween && !cam.follow) cam.tween = null;
+  if (cam.mapOn) { cam.yaw -= dx * s; cam.vYaw = lerp(cam.vYaw, -dx * s / dt, 0.4); return; }
+  if (cam.follow) { cam.follow.yawOff -= dx * s; cam.follow.pitch = clamp(cam.follow.pitch + dy * s, -0.6, 1.3); return; }
+  cam.yaw -= dx * s; cam.pitch += dy * s;
+  cam.vYaw = lerp(cam.vYaw, -dx * s / dt, 0.45); cam.vPitch = lerp(cam.vPitch, dy * s / dt, 0.45);
+});
+function endPtr(e) {
+  const P = ptrs.get(e.pointerId);
+  ptrs.delete(e.pointerId);
+  if (ptrs.size < 2) gesture = null;
+  if (!ptrs.size) canvas.classList.remove('dragging');
+  if (!P || e.type === 'pointercancel') return;
+  const moved = Math.hypot(e.clientX - P.x0, e.clientY - P.y0), held = performance.now() - P.t0;
+  if (moved < 6 && held < 350 && P.btn === 0) {
+    // stop any leftover spin, then treat as a click / tap
+    cam.vYaw = cam.vPitch = 0;
+    const now = performance.now();
+    const dbl = now - lastTap.t < 320 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 24;
+    lastTap = { t: dbl ? 0 : now, x: e.clientX, y: e.clientY };
+    if (dbl) onDoubleTap(e.clientX, e.clientY); else setTimeout(() => { if (lastTap.t === now) onTap(e.clientX, e.clientY); }, 240);
+  }
+}
+canvas.addEventListener('pointerup', endPtr);
+canvas.addEventListener('pointercancel', endPtr);
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const k = Math.exp(clamp(e.deltaY * (e.deltaMode === 1 ? 16 : 1), -240, 240) * 0.0016);
+  if (cam.follow) { cam.zoomImpulse = Math.log(k); return; }
+  if (cam.tween) cam.tween = null;
+  cam.distGoal = clamp(cam.distGoal * k, 12, 8000);
+}, { passive: false });
+
+function onTap(x, y) {
+  const h = pick(x, y);
+  if (!h) return;
+  if (h.kind === 'train') { if (cam.follow && cam.follow.li === h.data.li && cam.follow.n === h.data.n) stopFollow(); else startFollow(h.data.li, h.data.n); }
+  else if (h.kind === 'core') UI.openCore(true);
+  else if (h.kind === 'sango' && SANGO.visible > 0.3) UI.foundSango();
+}
+function onDoubleTap(x, y) {
+  const h = pick(x, y);
+  if (!h) return;
+  if (cam.follow) stopFollow();
+  if (cam.mapOn) setMap(false, true);
+  const dist = h.kind === 'sango' || h.kind === 'dome' ? 30 : clamp(cam.dist * 0.45, 60, 420);
+  flyTo({ target: h.point, dist, yaw: cam.yaw, pitch: clamp(cam.pitch, -0.2, 0.6) }, 1.1);
+}
+const keys = new Set();
+window.addEventListener('keydown', (e) => {
+  if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+  const k = e.key.toLowerCase();
+  if (['w', 'a', 's', 'd', 'q', 'e'].includes(k)) keys.add(k);
+  if (k === 'escape') { if (cam.follow) stopFollow(); else if (cam.mapOn) setMap(false); UI.closePanels(); }
+  if (k === 'r') { stopFollow(); setMap(false, true); flyTo(HOME, 1.4); }
+  if (k === 'l') setMap(!cam.mapOn);
+  if (k === 'm') AUDIO.toggle();
+  if (k === 'h') UI.toggleHidden();
+  if (k === '?' || k === '/') UI.toggleHelp();
+  if (k === 'f') $('fps').hidden = !$('fps').hidden;
+});
+window.addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
+window.addEventListener('blur', () => keys.clear());
+function keyboardPan(dt) {
+  if (!keys.size || cam.follow) return;
+  const sp = cam.dist * 0.9 * dt;
+  const fwd = v3.norm([-Math.sin(cam.yaw), 0, -Math.cos(cam.yaw)]), right = [Math.cos(cam.yaw), 0, -Math.sin(cam.yaw)];
+  let d = [0, 0, 0];
+  if (keys.has('w')) d = v3.add(d, fwd); if (keys.has('s')) d = v3.sub(d, fwd);
+  if (keys.has('d')) d = v3.add(d, right); if (keys.has('a')) d = v3.sub(d, right);
+  if (keys.has('e')) d[1] += 1; if (keys.has('q')) d[1] -= 1;
+  cam.tween = null;
+  cam.target = v3.madd(cam.target, d, sp);
+}
 
 // =====================================================================
-//  13. Frame setup & main loop
+//  13. UI: departures board, core panel, toolbar, route-map labels
+// =====================================================================
+const SANGO = { pos: [-306, 94, 0], visible: 0, found: false };
+const fmt = (s) => { s = Math.max(0, Math.round(s)); const m = Math.floor(s / 60); return String(Math.min(99, m)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'); };
+let toastTimer = 0;
+function toast(msg, ms = 2600) {
+  const el = $('toast'); el.textContent = msg; el.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), ms);
+}
+const STATUS = [['航行中', 'En route'], ['進站中', 'Arriving'], ['停靠中', 'At platform'], ['出站中', 'Departing'], ['已離站', 'Departed']];
+
+const UI = {
+  rows: [], hidden: false, lastBoard: 0, spark: [], sparkT: 0,
+  init() {
+    const ol = $('rows');
+    const defs = [[1, 0], [1, 1], [0, 0], [0, 1], [2, 0], [3, 0]];
+    for (const [li, slot] of defs) {
+      const el = document.createElement('li');
+      el.className = 'row'; el.tabIndex = 0; el.setAttribute('role', 'button');
+      el.style.setProperty('--lc', LINE_HEX[li]);
+      el.innerHTML = `<span class="badge">${'CPDX'[li]}</span><span class="no"></span><span class="dest"></span><span class="status"></span><span class="cd"></span>`;
+      const row = { el, li, slot, n: null, parts: [...el.children] };
+      const act = () => UI.rowClick(row);
+      el.addEventListener('click', act);
+      el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); act(); } });
+      ol.appendChild(el);
+      this.rows.push(row);
+    }
+    $('btnSound').onclick = () => AUDIO.toggle();
+    $('btnMap').onclick = () => setMap(!cam.mapOn);
+    $('btnReset').onclick = () => { stopFollow(); setMap(false, true); flyTo(HOME, 1.4); };
+    $('btnHide').onclick = () => UI.toggleHidden();
+    $('btnHelp').onclick = () => UI.toggleHelp();
+    $('btnQuality').onclick = () => setQuality(HI() ? 'low' : 'high', true);
+    $('coreClose').onclick = () => UI.openCore(false);
+    $('followExit').onclick = () => stopFollow();
+    $('boardToggle').onclick = () => { const b = $('board'); b.classList.toggle('collapsed'); $('boardToggle').setAttribute('aria-expanded', String(!b.classList.contains('collapsed'))); };
+    if (matchMedia('(max-width: 720px), (max-height: 520px)').matches) $('board').classList.add('collapsed');
+    const sl = $('loadSlider');
+    sl.addEventListener('input', () => { SIM.auto = false; SIM.manual = sl.value / 100; $('autoBtn').setAttribute('aria-pressed', 'false'); });
+    $('autoBtn').onclick = () => { SIM.auto = !SIM.auto; $('autoBtn').setAttribute('aria-pressed', String(SIM.auto)); if (!SIM.auto) SIM.manual = SIM.load; };
+    $('qLabel').textContent = HI() ? '高' : '低';
+    // labels for route-map mode
+    const L = [
+      ['EXP 算力中心', 'CORE', [0, 190, 0], '#E8ECF2'], ['客運月台', 'P1', [-275, 120, 0], LINE_HEX[1]], ['貨運泊位', 'C1', [-300, -80, 300], LINE_HEX[0]],
+      ['深空天線', 'X', [-560, 300, -50], LINE_HEX[3]],
+      ['C 貨運閘門', 'CARGO GATE', v3.add(ST.gates[0].c, [60, 60, 0]), LINE_HEX[0]], ['P 客運閘門', 'PASSENGER GATE', v3.add(ST.gates[1].c, [60, 45, 0]), LINE_HEX[1]],
+      ['D 數據閘門', 'DATA GATE', v3.add(ST.gates[2].c, [60, 35, 0]), LINE_HEX[2]], ['X 通訊閘門', 'COMMS GATE', v3.add(ST.gates[3].c, [60, 50, 0]), LINE_HEX[3]],
+    ];
+    this.labels = L.map(([zh, en, p, c]) => { const el = document.createElement('div'); el.className = 'lbl'; el.style.setProperty('--lc', c); el.innerHTML = `${zh}<small>${en}</small>`; $('labels').appendChild(el); return { el, p }; });
+    this.hintTimer = setTimeout(() => UI.hideHint(), 9000);
+    if (COARSE) $('hint').textContent = '單指旋轉 · 雙指縮放平移 · 點兩下前往 · 點列車跟隨';
+    if (QS.get('ui') === '0') { $('ui').style.display = 'none'; }
+    if (QS.get('fps') === '1') $('fps').hidden = false;
+  },
+  hideHint() { $('hint').classList.add('gone'); },
+  toggleHidden() { this.hidden = !this.hidden; $('ui').classList.toggle('hidden', this.hidden); $('btnHide').setAttribute('aria-pressed', String(this.hidden)); },
+  toggleHelp() { const h = $('help'); h.hidden = !h.hidden; $('btnHelp').setAttribute('aria-expanded', String(!h.hidden)); if (!h.hidden) $('corePanel').hidden = true; },
+  closePanels() { $('help').hidden = true; if (!$('corePanel').hidden) UI.openCore(false); },
+  openCore(open) {
+    $('corePanel').hidden = !open;
+    if (open) {
+      $('help').hidden = true;
+      if (cam.follow) stopFollow();
+      if (cam.mapOn) setMap(false, true);
+      flyTo({ target: [0, 30, 0], dist: 440, yaw: cam.yaw, pitch: 0.18 }, 1.3);
+    }
+  },
+  onFollow(on) {
+    $('followTag').hidden = !on;
+    if (on) {
+      const F = cam.follow;
+      $('followTag').style.setProperty('--lc', LINE_HEX[F.li]);
+      const d = trainDest(F.li, F.n);
+      $('followText').textContent = `跟隨中 ${trainNo(F.li, F.n)} · ${d[0]}`;
+    }
+    this.lastBoard = 0;
+  },
+  onMap(on) {
+    $('btnMap').setAttribute('aria-pressed', String(on));
+    $('legend').hidden = !on;
+    document.body.classList.toggle('map', on);
+    if (on) { $('corePanel').hidden = true; $('help').hidden = true; }
+  },
+  foundSango() {
+    if (!SANGO.found) { SANGO.found = true; toast('找到 Sango 了！ · You found Sango', 4200); AUDIO.sango(); }
+    else toast('Sango 在看行星 · Sango is watching the planet', 2400);
+  },
+  rowClick(row) {
+    if (row.li <= 1) {
+      if (row.n === null) return;
+      if (cam.follow && cam.follow.li === row.li && cam.follow.n === row.n) { stopFollow(); return; }
+      const alive = (SIM.trains || []).some((q) => q.li === row.li && q.n === row.n);
+      if (alive) startFollow(row.li, row.n);
+      else toast('列車尚在排程，將於 ' + row.parts[4].textContent + ' 後出現 · Not in the sky yet');
+    } else if (row.li === 2) {
+      stopFollow(); setMap(false, true);
+      flyTo({ target: v3.add(ST.gates[2].c, [-60, 0, 0]), dist: 260, yaw: 0.85, pitch: 0.12 }, 1.4);
+    } else {
+      stopFollow(); setMap(false, true);
+      flyTo({ target: [-300, 250, -50], dist: 620, yaw: 2.2, pitch: 0.08 }, 1.4);
+    }
+  },
+  /** Board rows: the next two trains per line that have not yet left, plus the next D batch and X shot. */
+  updateBoard(t) {
+    const d = new Date(t * 1000);
+    $('clock').textContent = 'UTC ' + d.toISOString().substr(11, 8);
+    const pillParts = [];
+    for (let li = 0; li < 2; li++) {
+      const SL = SIMLINES[li], H = SL.cfg.headway;
+      const n0 = Math.floor((t - SL.cfg.phase - SL.tDepart) / H);
+      const cand = [];
+      for (let n = n0; n < n0 + 6 && cand.length < 2; n++) {
+        const tau = t - (n * H + SL.cfg.phase);
+        if (tau >= SL.tDepart) continue;
+        cand.push({ n, tau });
+      }
+      cand.forEach((c, slot) => {
+        const row = this.rows.find((r) => r.li === li && r.slot === slot);
+        row.n = c.n;
+        const st = c.tau < 0 ? 0 : c.tau < SL.tCapture ? 0 : c.tau < SL.tStop ? 1 : 2;
+        const dest = trainDest(li, c.n);
+        const until = st === 2 ? SL.tDepart - c.tau : SL.tStop - c.tau;
+        const label = st === 2 ? ['發車', 'Departs'] : ['到站', 'Arrives'];
+        row.parts[1].textContent = trainNo(li, c.n);
+        row.parts[2].innerHTML = `往 ${dest[0]}<small>to ${dest[1]}</small>`;
+        row.parts[3].innerHTML = `${STATUS[st][0]}<small>${label[0]} ${label[1]}</small>`;
+        row.parts[3].className = 'status' + (st >= 1 ? ' live' : '');
+        row.parts[4].textContent = fmt(until);
+        row.el.classList.toggle('following', !!(cam.follow && cam.follow.li === li && cam.follow.n === c.n));
+        if (slot === 0) pillParts.push({ li, until, txt: `${trainNo(li, c.n)} ${label[0]} ${fmt(until)}` });
+      });
+    }
+    const dRow = this.rows.find((r) => r.li === 2), xRow = this.rows.find((r) => r.li === 3);
+    const src = DESTS[2][Math.floor((SIM.nextBatch || 0) / 20) % 2];
+    dRow.parts[1].textContent = 'D' + String(Math.floor((SIM.nextBatch || 0) / 20) % 900 + 100);
+    dRow.parts[2].innerHTML = `來自 ${src[0]}<small>from ${src[1]}</small>`;
+    dRow.parts[3].innerHTML = `下一批次<small>${5 + Math.floor(7 * clamp(SIM.load, 0, 1.3))} 包 packets</small>`;
+    dRow.parts[4].textContent = fmt((SIM.nextBatch || t) - t);
+    const xi = Math.floor((SIM.nextBeam || 0) / 45);
+    const tgt = DESTS[3][((xi % 3) + 3) % 3];
+    xRow.parts[1].textContent = 'X' + String(xi % 900 + 100);
+    xRow.parts[2].innerHTML = `往 ${tgt[0]}<small>to ${tgt[1]}</small>`;
+    const firing = SIM.beamFire > 0, charging = SIM.beamCharge > 0;
+    xRow.parts[3].innerHTML = firing ? '發射中<small>Transmitting</small>' : charging ? '充能中<small>Charging</small>' : '下一次發射<small>Next burst</small>';
+    xRow.parts[3].className = 'status' + (firing || charging ? ' live' : '');
+    xRow.parts[4].textContent = firing ? '00:00' : fmt((SIM.nextBeam || t) - t);
+    pillParts.sort((a, b) => a.until - b.until);
+    if (pillParts[0]) { $('pillText').textContent = '下一班 ' + pillParts[0].txt; $('boardToggle').style.setProperty('--lc', LINE_HEX[pillParts[0].li]); }
+    // core panel
+    if (!$('corePanel').hidden) {
+      const pct = Math.round(SIM.load * 100);
+      $('loadPct').textContent = pct;
+      const T = finTemp(SIM.heat);
+      $('finK').textContent = Math.round(T) + ' K';
+      $('inflow').textContent = (1 / (1.6 / Math.max(0.15, SIM.load)) + (5 + 7 * SIM.load) / 20).toFixed(1);
+      const tag = $('loadTag');
+      tag.textContent = pct > 100 ? '超頻 Overclock' : pct > 75 ? '高負載 High' : pct < 20 ? '待機 Idle' : '一般 Nominal';
+      tag.classList.toggle('oc', pct > 100);
+      if (SIM.auto) $('loadSlider').value = pct;
+      this.drawSpark();
+    }
+  },
+  drawSpark() {
+    const c = $('spark'), g2 = c.getContext('2d'), W = c.width, H = c.height;
+    g2.clearRect(0, 0, W, H);
+    g2.strokeStyle = 'rgba(255,255,255,0.08)'; g2.lineWidth = 1;
+    for (const v of [0.5, 1.0]) { const y = H - v / 1.3 * H; g2.beginPath(); g2.moveTo(0, y); g2.lineTo(W, y); g2.stroke(); }
+    const s = this.spark;
+    if (s.length < 2) return;
+    const grad = g2.createLinearGradient(0, H, 0, 0);
+    grad.addColorStop(0, '#6a1204'); grad.addColorStop(0.5, '#ff4a12'); grad.addColorStop(1, '#ffc27a');
+    g2.beginPath();
+    s.forEach((v, i) => { const x = i / 119 * W, y = H - clamp(v / 1.3, 0, 1) * (H - 4) - 2; if (i) g2.lineTo(x, y); else g2.moveTo(x, y); });
+    g2.strokeStyle = grad; g2.lineWidth = 3; g2.stroke();
+    g2.lineTo((s.length - 1) / 119 * W, H); g2.lineTo(0, H); g2.closePath();
+    g2.globalAlpha = 0.16; g2.fillStyle = grad; g2.fill(); g2.globalAlpha = 1;
+  },
+  update(t, dt) {
+    if (performance.now() - this.lastBoard > 250) { this.lastBoard = performance.now(); this.updateBoard(t); }
+    this.sparkT += dt;
+    if (this.sparkT > 0.5) { this.sparkT = 0; this.spark.push(SIM.load); if (this.spark.length > 120) this.spark.shift(); }
+    // route-map labels follow their anchors
+    const m = cam.map;
+    for (const L of this.labels) {
+      if (m < 0.02) { L.el.style.opacity = 0; continue; }
+      const c = m4.xform(cam.vp, L.p);
+      const vis = c[2] < 1 && Math.abs(c[0]) < 1.1 && Math.abs(c[1]) < 1.1;
+      L.el.style.opacity = vis ? m : 0;
+      L.el.style.left = ((c[0] * 0.5 + 0.5) * 100) + '%';
+      L.el.style.top = ((0.5 - c[1] * 0.5) * 100) + '%';
+    }
+  },
+};
+
+// ---------------------------------------------------------------------
+//  Load model: auto (job schedule + data batches) or manual; fins lag behind
+// ---------------------------------------------------------------------
+Object.assign(SIM, { auto: true, manual: 0.45, heat: 0.45, trains: [] });
+function updateLoad(t, dt) {
+  let target;
+  if (SIM.auto) {
+    const slow = 0.10 * Math.sin(t * 0.021) + 0.06 * Math.sin(t * 0.057 + 1.3);
+    const sinceBatch = ((t - 2) % 20 + 20) % 20;
+    const bump = 0.16 * Math.exp(-Math.max(0, sinceBatch - 5.5) / 5) * (sinceBatch > 5.5 ? 1 : 0);
+    target = clamp(0.45 + slow + bump, 0.15, 0.95);
+  } else target = SIM.manual;
+  if (QS.has('load')) target = parseFloat(QS.get('load'));
+  SIM.load += (target - SIM.load) * (1 - Math.exp(-dt * (SIM.auto ? 1.5 : 4)));
+  if (FREEZE && QS.has('load')) SIM.load = target;
+  // radiator temperature follows with thermal lag
+  SIM.heat += (SIM.load - SIM.heat) * (1 - Math.exp(-dt * 0.9));
+  if (FREEZE) SIM.heat = SIM.load;
+}
+
+// =====================================================================
+//  14. Audio: everything synthesised with Web Audio (muted by default)
+// =====================================================================
+const AUDIO = {
+  ctx: null, on: false,
+  init() {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) { toast('此瀏覽器不支援 Web Audio'); return false; }
+    const ctx = this.ctx = new AC();
+    this.master = ctx.createGain(); this.master.gain.value = 0;
+    const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -18; comp.ratio.value = 3;
+    this.master.connect(comp); comp.connect(ctx.destination);
+    // reverb from a synthesised impulse response
+    const len = ctx.sampleRate * 3, ir = ctx.createBuffer(2, len, ctx.sampleRate);
+    for (let ch = 0; ch < 2; ch++) { const d = ir.getChannelData(ch); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3.2) * (i < 200 ? i / 200 : 1); }
+    this.verb = ctx.createConvolver(); this.verb.buffer = ir;
+    this.verbGain = ctx.createGain(); this.verbGain.gain.value = 0.35;
+    this.verb.connect(this.verbGain); this.verbGain.connect(this.master);
+    // hum: two detuned saws and a sub through a load-controlled low-pass, plus filtered air
+    this.humF = ctx.createBiquadFilter(); this.humF.type = 'lowpass'; this.humF.frequency.value = 220; this.humF.Q.value = 0.8;
+    this.humG = ctx.createGain(); this.humG.gain.value = 0.16;
+    this.humF.connect(this.humG); this.humG.connect(this.master);
+    this.oscs = [[41.2, 'sawtooth', 0.5], [55.1, 'sawtooth', 0.35], [27.5, 'sine', 0.9], [82.4, 'triangle', 0.12]].map(([f, type, g]) => {
+      const o = ctx.createOscillator(); o.type = type; o.frequency.value = f;
+      const gg = ctx.createGain(); gg.gain.value = g; o.connect(gg); gg.connect(this.humF); o.start(); return { o, base: f };
+    });
+    const lfo = ctx.createOscillator(); lfo.frequency.value = 0.07; const lg = ctx.createGain(); lg.gain.value = 60; lfo.connect(lg); lg.connect(this.humF.frequency); lfo.start();
+    const nb = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate), nd = nb.getChannelData(0);
+    for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+    const ns = ctx.createBufferSource(); ns.buffer = nb; ns.loop = true;
+    this.airF = ctx.createBiquadFilter(); this.airF.type = 'bandpass'; this.airF.frequency.value = 420; this.airF.Q.value = 0.6;
+    this.airG = ctx.createGain(); this.airG.gain.value = 0.025;
+    ns.connect(this.airF); this.airF.connect(this.airG); this.airG.connect(this.master); this.airG.connect(this.verb); ns.start();
+    this.noise = nb;
+    return true;
+  },
+  toggle() {
+    if (!this.ctx && !this.init()) return;
+    this.on = !this.on;
+    if (this.on) this.ctx.resume();
+    const g = this.master.gain, now = this.ctx.currentTime;
+    g.cancelScheduledValues(now); g.setValueAtTime(g.value, now); g.linearRampToValueAtTime(this.on ? 0.85 : 0, now + (this.on ? 1.2 : 0.4));
+    $('btnSound').setAttribute('aria-pressed', String(this.on));
+    toast(this.on ? '環境音已開啟 · Sound on' : '已靜音 · Muted', 1500);
+  },
+  update(load) {
+    if (!this.ctx || !this.on) return;
+    const now = this.ctx.currentTime;
+    this.humF.frequency.setTargetAtTime(160 + 520 * load, now, 0.5);
+    this.humG.gain.setTargetAtTime(0.12 + 0.08 * load, now, 0.5);
+    this.airG.gain.setTargetAtTime(0.018 + 0.03 * load, now, 0.5);
+    for (const o of this.oscs) o.o.frequency.setTargetAtTime(o.base * (1 + 0.035 * load), now, 0.8);
+  },
+  /** Stereo position and distance gain for an event in the world. */
+  place(pos) {
+    const ctx = this.ctx, p = ctx.createStereoPanner ? ctx.createStereoPanner() : null, g = ctx.createGain();
+    const v = m4.xform(cam.view, pos), d = Math.hypot(v[0], v[1], v[2]);
+    g.gain.value = 1 / (1 + d / 900);
+    if (p) { p.pan.value = clamp(v[0] / Math.max(80, Math.abs(v[2])), -0.85, 0.85); g.connect(p); p.connect(this.master); p.connect(this.verb); }
+    else { g.connect(this.master); g.connect(this.verb); }
+    return g;
+  },
+  bell(out, f, t0, dur = 2.6, amp = 0.22) {
+    const ctx = this.ctx, car = ctx.createOscillator(), mod = ctx.createOscillator(), mg = ctx.createGain(), env = ctx.createGain();
+    car.frequency.value = f; mod.frequency.value = f * 3.5; mg.gain.setValueAtTime(f * 2.2, t0); mg.gain.exponentialRampToValueAtTime(f * 0.05, t0 + dur);
+    mod.connect(mg); mg.connect(car.frequency);
+    env.gain.setValueAtTime(0.0001, t0); env.gain.exponentialRampToValueAtTime(amp, t0 + 0.012); env.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    car.connect(env); env.connect(out);
+    car.start(t0); mod.start(t0); car.stop(t0 + dur + 0.1); mod.stop(t0 + dur + 0.1);
+  },
+  event(ev) {
+    if (!this.ctx || !this.on) return;
+    const now = this.ctx.currentTime, out = this.place(ev.pos || [0, 0, 0]);
+    const P = [659.3, 830.6, 987.8], C = [220, 329.6];
+    if (ev.state === 2) (ev.li === 1 ? P : C).forEach((f, i) => this.bell(out, f, now + i * (ev.li === 1 ? 0.2 : 0.42), ev.li === 1 ? 2.2 : 3.2, ev.li === 1 ? 0.18 : 0.24));
+    else if (ev.state === 3) (ev.li === 1 ? P.slice().reverse() : C.slice().reverse()).forEach((f, i) => this.bell(out, f, now + i * (ev.li === 1 ? 0.2 : 0.42), 2.0, 0.14));
+    else if (ev.state === 1 || ev.state === 4) this.whoosh(out, ev.state === 1 ? 0.5 : 0.35);
+  },
+  whoosh(out, amp) {
+    const ctx = this.ctx, now = ctx.currentTime, s = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
+    s.buffer = this.noise; f.type = 'bandpass'; f.Q.value = 2.5;
+    f.frequency.setValueAtTime(180, now); f.frequency.exponentialRampToValueAtTime(1400, now + 0.9); f.frequency.exponentialRampToValueAtTime(300, now + 2.2);
+    g.gain.setValueAtTime(0.0001, now); g.gain.exponentialRampToValueAtTime(amp, now + 0.6); g.gain.exponentialRampToValueAtTime(0.0001, now + 2.4);
+    s.connect(f); f.connect(g); g.connect(out); s.start(now); s.stop(now + 2.5);
+  },
+  sparkle(pos) {
+    if (!this.ctx || !this.on) return;
+    const out = this.place(pos), now = this.ctx.currentTime;
+    for (let i = 0; i < 6; i++) this.bell(out, 1760 * Math.pow(2, [0, 3, 7, 10, 12, 15][i] / 12), now + i * 0.07, 0.5, 0.035);
+  },
+  sweep(pos) {
+    if (!this.ctx || !this.on) return;
+    const ctx = this.ctx, out = this.place(pos), now = ctx.currentTime;
+    const o = ctx.createOscillator(), g = ctx.createGain(), dl = ctx.createDelay(), fb = ctx.createGain();
+    o.type = 'sine'; o.frequency.setValueAtTime(260, now); o.frequency.exponentialRampToValueAtTime(1500, now + 0.45);
+    g.gain.setValueAtTime(0.0001, now); g.gain.exponentialRampToValueAtTime(0.16, now + 0.05); g.gain.exponentialRampToValueAtTime(0.0001, now + 0.6);
+    dl.delayTime.value = 0.23; fb.gain.value = 0.42;
+    o.connect(g); g.connect(out); g.connect(dl); dl.connect(fb); fb.connect(dl); fb.connect(out);
+    o.start(now); o.stop(now + 0.7);
+  },
+  sango() {
+    if (!this.ctx || !this.on) return;
+    const out = this.place(SANGO.pos), now = this.ctx.currentTime;
+    [1046.5, 1318.5, 1568, 2093].forEach((f, i) => this.bell(out, f, now + i * 0.11, 1.4, 0.08));
+  },
+};
+let audioPrev = { batch: 0, beam: 0 };
+function audioTick(t) {
+  while (trainEvents.length) { const ev = trainEvents.shift(); AUDIO.event(ev); }
+  const b = Math.floor((t - 2 - 5.9) / 20);
+  if (b !== audioPrev.batch) { if (audioPrev.batch) AUDIO.sparkle([60, -30, 0]); audioPrev.batch = b; }
+  const x = Math.floor(t / 45);
+  if (x !== audioPrev.beam) { if (audioPrev.beam) AUDIO.sweep(ST.antenna.focus); audioPrev.beam = x; }
+  AUDIO.update(SIM.load);
+}
+
+// =====================================================================
+//  Quality switching (live: render scale, shadow map, shader define, steps)
+// =====================================================================
+function setQuality(q, user) {
+  if (q === QUALITY) return;
+  QUALITY = q;
+  if (user) store.set('quality', q);
+  $('qLabel').textContent = HI() ? '高' : '低';
+  gl.deleteProgram(solidProg.p);
+  solidProg = program('solid', SOLID_VS, SOLID_FS, '#define QUALITY_HIGH ' + (HI() ? 1 : 0));
+  gl.deleteTexture(SHADOW.tex); gl.deleteFramebuffer(SHADOW.fbo);
+  setupShadow();
+  if (typeof onQualityChanged === 'function') onQualityChanged();
+  toast(HI() ? '高畫質 · High quality' : '低畫質 · Low quality (faster)', 1600);
+}
+const perf = { frames: 0, time: 0, checked: !!(QS.get('q') || store.get('quality') || SHOT) };
+function autoQuality(dt) {
+  if (perf.checked) return;
+  perf.frames++; perf.time += dt;
+  if (perf.frames === 20) { perf.time = 0; }           // skip warm-up frames
+  if (perf.frames === 200) {
+    perf.checked = true;
+    const avg = perf.time / 180;
+    if (HI() && avg > 0.022) { setQuality('low', false); toast('偵測到效能不足，已切換為低畫質 · Switched to low quality', 3500); }
+  }
+}
+
+// =====================================================================
+//  15. Frame setup & main loop
 // =====================================================================
 function resize() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -2843,7 +3645,7 @@ function writeFrame(t) {
   const near = clamp(cam.dist * 0.02, 0.3, 40), far = 60000;
   cam.proj = m4.persp(cam.fov, aspect, near, far);
   cam.view = m4.lookAt(cam.eye, cam.target, [0, 1, 0]);
-  const vp = m4.mul(cam.proj, cam.view);
+  const vp = cam.vp = m4.mul(cam.proj, cam.view);
   const viewRot = new Float32Array(cam.view); viewRot[12] = viewRot[13] = viewRot[14] = 0;
   const invVPR = m4.invert(m4.mul(cam.proj, viewRot));
   const d = frameData;
@@ -2856,21 +3658,29 @@ function writeFrame(t) {
   put(1.0, 0.955, 0.9, EXPOSURE);                                     // sun colour, exposure
   put(WORLD.planetDir[0], WORLD.planetDir[1], WORLD.planetDir[2], (t % 2400) / 2400 * Math.PI * 2);
   put(w, h, 1 / w, 1 / h);
-  put(SIM.load, finTemp(SIM.load), (t % 1000) * (0.25 + 0.5 * SIM.load), (t % 1500) / 1500 * Math.PI * 2 + 0.7);
+  put(SIM.load, finTemp(SIM.heat), (t % 1000) * (0.25 + 0.5 * SIM.load), (t % 1500) / 1500 * Math.PI * 2 + 0.7);
   put(HI() ? 1 : 0, HI() ? 16 : 8, HI() ? 6 : 3, HI() ? 9 : 6);
-  put(near, far, 0, PLANET_DIST);
+  put(near, far, cam.map, PLANET_DIST);
   gl.bindBuffer(gl.UNIFORM_BUFFER, frameUBO);
   gl.bufferSubData(gl.UNIFORM_BUFFER, 0, frameData);
 }
 
 let lastT = performance.now(), frames = 0;
+const fpsAcc = { n: 0, t: 0 };
+function fpsMeter(dt) {
+  fpsAcc.n++; fpsAcc.t += dt;
+  if (fpsAcc.t > 0.5 && !$('fps').hidden) { $('fps').textContent = `${Math.round(fpsAcc.n / fpsAcc.t)} fps · ${RT.w}×${RT.h} · ${HI() ? 'high' : 'low'}`; fpsAcc.n = 0; fpsAcc.t = 0; }
+  if (fpsAcc.t > 0.5) { fpsAcc.n = 0; fpsAcc.t = 0; }
+}
 function frame() {
   const tNow = performance.now();
   const dt = Math.min(0.1, (tNow - lastT) / 1000);
   lastT = tNow;
   resize();
-  updateCamera(dt);
   const t = nowS();
+  updateLoad(t, dt);
+  keyboardPan(dt);
+  updateCamera(dt);
   writeFrame(t);
   simulate(t, dt);
 
@@ -2885,7 +3695,7 @@ function frame() {
   gl.disable(gl.BLEND);
 
   // the station
-  renderSolids(SIM.load);
+  renderSolids(SIM.heat);
 
   // background (planet + sky) only where nothing was drawn
   gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(false);
@@ -2901,7 +3711,7 @@ function frame() {
   gl.drawArrays(gl.POINTS, 0, starCount);
   gl.disable(gl.BLEND);
   gl.depthMask(true);
-  renderRibbons(1.6, 2.2);
+  renderRibbons(lerp(1.6, 4.2, cam.map), lerp(2.2, 5.5, cam.map));
   // glow sprites, streaks, the beam
   gl.useProgram(spriteProg.p);
   gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(false);
@@ -2918,13 +3728,17 @@ function frame() {
   gl.uniform1i(compProg.u.uHDR, 0);
   drawFullscreen();
 
+  UI.update(t, dt);
+  audioTick(t);
+  autoQuality(dt);
+  fpsMeter(dt);
   frames++;
   if (frames === 2) { window.__ready = true; window.__stats = { ...ST.stats, trains: SIM.trains.map((q) => [q.no, q.state, q.head.map(Math.round)]), lines: SIMLINES.map((L) => [L.cfg.key, Math.round(L.total), Math.round(L.tCapture), Math.round(L.tStop), Math.round(L.tDepart), Math.round(L.tRelease)]) }; }
   requestAnimationFrame(frame);
 }
 
 // =====================================================================
-//  14. Boot sequence (spread over frames so the loading bar moves)
+//  16. Boot sequence (spread over frames so the loading bar moves)
 // =====================================================================
 function setLoad(frac, text) {
   $('loadbar').style.width = Math.round(frac * 100) + '%';
@@ -2960,6 +3774,16 @@ async function boot() {
   }
   setLoad(1, '完成 Ready');
   resize();
+  UI.init();
+  if (QS.get('map') === '1' || SHOT === 'map') { cam.mapOn = true; cam.map = 1; applyPose(mapPose()); UI.onMap(true); }
+  if (QS.get('panel') === 'core') { $('corePanel').hidden = false; UI.spark = Array.from({ length: 120 }, (_, i) => 0.45 + 0.12 * Math.sin(i * 0.11) + 0.05 * Math.sin(i * 0.37)); }
+  const fl = QS.get('follow') || (SHOT === 'follow' ? 'C' : null);
+  if (fl) {
+    const li = fl === 'P' ? 1 : 0;
+    updateLoad(nowS(), 0); simulate(nowS(), 0);
+    const tr = SIM.trains.filter((q) => q.li === li).sort((a, b) => Math.abs(a.head[0]) - Math.abs(b.head[0]))[0];
+    if (tr) { cam.follow = { li, n: tr.n, yawOff: parseFloat(QS.get('fyaw') || '0.62'), pitch: parseFloat(QS.get('fpitch') || '0.2'), dist: parseFloat(QS.get('fdist') || (li === 0 ? '170' : '95')) }; applyPose(followPose()); UI.onFollow(true); }
+  }
   requestAnimationFrame(frame);
   if (SHOT) $('loading').style.display = 'none'; else setTimeout(() => $('loading').classList.add('done'), 250);
 }
