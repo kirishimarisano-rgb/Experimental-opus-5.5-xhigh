@@ -577,6 +577,7 @@ function allocTargets(w, h) {
   RT.hdrTex = tex2D(w, h, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
   RT.depthTex = tex2D(w, h, gl.DEPTH_COMPONENT24, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, gl.NEAREST);
   RT.hdrFBO = fbo(RT.hdrTex, RT.depthTex);
+  if (typeof allocPost === 'function' && finalProg) allocPost(w, h);
 }
 
 // =====================================================================
@@ -2877,6 +2878,8 @@ function simulate(t, dt) {
     DYN.drone.add(p, X, Y, Z, 1, 1, 1);
     fx.add(v3.add(p, [0, 0.8, 0]), v3.add(p, [0, 0.8, 0]), 0.6, WHITE, 16, 1, [1.3, i * 0.13, 0.1], 1.4);
   }
+  SANGO.visible = 1 - smoothstep(55, 110, v3.dist(cam.eye, SANGO.pos));
+  if (SANGO.visible > 0.01) fx.add(SANGO.pos, SANGO.pos, 2.4, [0.91, 0.49, 0.35], 0.3 * SANGO.visible, 1, null, 0);
   for (const k of Object.keys(DYN)) DYN[k].commit();
   fx.commit();
   SIM.corePulse *= Math.exp(-dt * 2.5);
@@ -2937,7 +2940,7 @@ function simulateBeam(t) {
   else if (ph < 8) fire = 1 - (ph - 6) / 2;
   SIM.beamCharge = charge; SIM.beamFire = fire;
   // dish rim lights
-  const rimI = charge * 30 + fire * 12;
+  const rimI = charge * 22 + fire * 6;
   if (rimI > 0.1) {
     for (let k = 0; k < 24; k++) {
       const a = k / 24 * Math.PI * 2, rim = v3.add(ST.antenna.hub, [45 * 45 / (4 * 34), Math.cos(a) * 45, Math.sin(a) * 45]);
@@ -2949,7 +2952,7 @@ function simulateBeam(t) {
     const far = v3.madd(focus, dir, 20000);
     fx.add(focus, far, 1.1, [1, 1, 1], 60 * e, 0.0, null, 1.6);
     fx.add(focus, far, 5, col, 6 * e, 0.0, null, 4);
-    fx.add(focus, focus, 14, col, 35 * e, 1, null, 6);
+    fx.add(focus, focus, 6, col, 14 * e, 1, null, 4);
     // message packets racing outward
     for (let k = 0; k < 10; k++) {
       const x = ((ph * 2600 + k * 820) % 9000);
@@ -2982,7 +2985,7 @@ const SHOTS = {
   gate:   { target: [1090, 90, -400], dist: 230, yaw: 1.0, pitch: 0.14 },
   core:   { target: [0, 25, 0], dist: 430, yaw: 0.55, pitch: 0.16 },
   map:    { target: [340, 0, 30], dist: 2500, yaw: 0.0, pitch: 1.53 },
-  sango:  { target: [-306, 94, 0], dist: 28, yaw: 1.25, pitch: 0.1 },
+  sango:  { target: [-309, 93, 1.5], dist: 13, yaw: 1.46, pitch: 0.15 },
   sky:    { target: [0, 0, 0], dist: 10, yaw: 2.0, pitch: -0.3 },
 };
 if (SHOT && SHOTS[SHOT]) { Object.assign(cam, JSON.parse(JSON.stringify(SHOTS[SHOT]))); cam.distGoal = cam.dist; }
@@ -3627,6 +3630,428 @@ function autoQuality(dt) {
 }
 
 // =====================================================================
+//  17. Post: MSAA resolve, bloom chain, lens flare, AgX grade, FXAA
+// =====================================================================
+const POST = { msaa: 0, mips: [], ldr: null };
+function allocPost(w, h) {
+  // multisampled HDR target (high quality only)
+  if (POST.msFBO) { gl.deleteFramebuffer(POST.msFBO); gl.deleteRenderbuffer(POST.msColor); gl.deleteRenderbuffer(POST.msDepth); POST.msFBO = null; }
+  POST.msaa = 0;
+  if (HI()) {
+    const samples = Math.min(4, gl.getParameter(gl.MAX_SAMPLES) || 0);
+    if (samples > 1) {
+      try {
+        POST.msColor = gl.createRenderbuffer();
+        gl.bindRenderbuffer(gl.RENDERBUFFER, POST.msColor);
+        gl.renderbufferStorageMultisample(gl.RENDERBUFFER, samples, gl.RGBA16F, w, h);
+        POST.msDepth = gl.createRenderbuffer();
+        gl.bindRenderbuffer(gl.RENDERBUFFER, POST.msDepth);
+        gl.renderbufferStorageMultisample(gl.RENDERBUFFER, samples, gl.DEPTH_COMPONENT24, w, h);
+        POST.msFBO = gl.createFramebuffer();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, POST.msFBO);
+        gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, POST.msColor);
+        gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, POST.msDepth);
+        if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE) POST.msaa = samples;
+        else { gl.deleteFramebuffer(POST.msFBO); POST.msFBO = null; }
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      } catch (e) { POST.msFBO = null; POST.msaa = 0; }
+    }
+  }
+  // bloom mip chain
+  for (const m of POST.mips) { gl.deleteTexture(m.tex); gl.deleteFramebuffer(m.fbo); }
+  POST.mips = [];
+  const levels = HI() ? 6 : 5;
+  let mw = w, mh = h;
+  for (let i = 0; i < levels; i++) {
+    mw = Math.max(1, mw >> 1); mh = Math.max(1, mh >> 1);
+    const tex = tex2D(mw, mh, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT);
+    POST.mips.push({ tex, fbo: fbo(tex, null), w: mw, h: mh });
+  }
+  // LDR target for FXAA (low quality)
+  if (POST.ldr) { gl.deleteTexture(POST.ldr.tex); gl.deleteFramebuffer(POST.ldr.fbo); POST.ldr = null; }
+  if (!HI()) { const tex = tex2D(w, h, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE); POST.ldr = { tex, fbo: fbo(tex, null) }; }
+}
+function onQualityChanged() { RT.w = 0; resize(); }
+
+const DOWN_FS = `
+in vec2 vUV; out vec4 o;
+uniform sampler2D uSrc; uniform vec2 uTexel; uniform int uFirst;
+vec3 s(vec2 d) { return min(texture(uSrc, vUV + uTexel * d).rgb, vec3(uFirst == 1 ? 120.0 : 30000.0)); }
+float kw(vec3 c) { return 1.0 / (1.0 + dot(c, vec3(0.2126, 0.7152, 0.0722)) * 0.25); }
+void main() {
+  vec3 a = s(vec2(-2, 2)), b = s(vec2(0, 2)), c = s(vec2(2, 2));
+  vec3 d = s(vec2(-2, 0)), e = s(vec2(0, 0)), f = s(vec2(2, 0));
+  vec3 g = s(vec2(-2, -2)), h = s(vec2(0, -2)), i = s(vec2(2, -2));
+  vec3 j = s(vec2(-1, 1)), k = s(vec2(1, 1)), l = s(vec2(-1, -1)), m = s(vec2(1, -1));
+  vec3 col;
+  if (uFirst == 1) {
+    // Karis average per 2x2 group keeps single bright pixels from flickering
+    vec3 g0 = (j + k + l + m) * 0.25, g1 = (a + b + d + e) * 0.25, g2 = (b + c + e + f) * 0.25, g3 = (d + e + g + h) * 0.25, g4 = (e + f + h + i) * 0.25;
+    float w0 = kw(g0) * 0.5, w1 = kw(g1) * 0.125, w2 = kw(g2) * 0.125, w3 = kw(g3) * 0.125, w4 = kw(g4) * 0.125;
+    col = (g0 * w0 + g1 * w1 + g2 * w2 + g3 * w3 + g4 * w4) / (w0 + w1 + w2 + w3 + w4);
+  } else {
+    col = e * 0.125 + (a + c + g + i) * 0.03125 + (b + d + f + h) * 0.0625 + (j + k + l + m) * 0.125;
+  }
+  o = vec4(min(col, vec3(30000.0)), 1.0);
+}`;
+const UP_FS = `
+in vec2 vUV; out vec4 o;
+uniform sampler2D uSrc; uniform vec2 uTexel; uniform float uRadius;
+vec3 s(vec2 d) { return texture(uSrc, vUV + uTexel * d * uRadius).rgb; }
+void main() {
+  vec3 c = s(vec2(0, 0)) * 4.0 + (s(vec2(-1, 0)) + s(vec2(1, 0)) + s(vec2(0, -1)) + s(vec2(0, 1))) * 2.0
+         + s(vec2(-1, -1)) + s(vec2(1, -1)) + s(vec2(-1, 1)) + s(vec2(1, 1));
+  o = vec4(c / 16.0, 1.0);
+}`;
+const FINAL_FS = `
+in vec2 vUV; out vec4 o;
+uniform sampler2D uHDR; uniform sampler2D uBloom;
+uniform float uBloomK; uniform vec4 uSunS;   // xy sun uv, z strength, w aspect
+uniform float uGrain; uniform float uTime;
+vec3 agxContrast(vec3 x) {
+  vec3 x2 = x * x, x4 = x2 * x2;
+  return 15.5 * x4 * x2 - 40.14 * x4 * x + 31.96 * x4 - 6.868 * x2 * x + 0.4298 * x2 + 0.1191 * x - 0.00232;
+}
+vec3 agx(vec3 c) {
+  const mat3 M = mat3(0.842479062253094, 0.0423282422610123, 0.0423756549057051,
+                      0.0784335999999992, 0.878468636469772, 0.0784336,
+                      0.0792237451477643, 0.0791661274605434, 0.879142973793104);
+  const mat3 Mi = mat3(1.19687900512017, -0.0528968517574562, -0.0529716355144438,
+                       -0.0980208811401368, 1.15190312990417, -0.0980434501171241,
+                       -0.0990297440797205, -0.0989611768448433, 1.15107367264116);
+  const float lo = -12.47393, hi = 4.026069;
+  c = M * max(c, 1e-10);
+  c = clamp(log2(c), lo, hi);
+  c = (c - lo) / (hi - lo);
+  c = agxContrast(c);
+  float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  c = pow(max(c, 0.0), vec3(1.16));
+  c = l + 1.16 * (c - l);
+  return clamp(Mi * c, 0.0, 1.0);
+}
+float hash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * .1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+vec3 flare(vec2 uv) {
+  if (uSunS.z <= 0.0) return vec3(0.0);
+  vec2 asp = vec2(uSunS.w, 1.0);
+  vec2 sp = uSunS.xy, axis = vec2(0.5) - sp;
+  vec3 acc = vec3(0.0);
+  const float POS[5] = float[5](0.55, 0.9, 1.25, 1.6, 2.1);
+  const float SZ[5] = float[5](0.035, 0.06, 0.02, 0.11, 0.05);
+  const vec3 COL[5] = vec3[5](vec3(0.25, 0.5, 1.0), vec3(1.0, 0.6, 0.3), vec3(0.5, 1.0, 0.7), vec3(0.4, 0.3, 1.0), vec3(1.0, 0.4, 0.5));
+  for (int i = 0; i < 5; i++) {
+    vec2 gp = sp + axis * POS[i] * 2.0 * 0.5;
+    float d = length((uv - gp) * asp);
+    acc += COL[i] * (1.0 - smoothstep(SZ[i] * 0.55, SZ[i], d)) * 0.018;
+  }
+  float dc = length((uv - 0.5) * asp), ring = exp(-pow((dc - 0.42) / 0.012, 2.0)) * 0.012;
+  acc += vec3(0.6, 0.8, 1.0) * ring * smoothstep(0.7, 0.2, length(sp - 0.5));
+  vec2 ds = (uv - sp) * asp;
+  acc += vec3(1.0, 0.9, 0.8) * exp(-abs(ds.y) * 380.0) * exp(-abs(ds.x) * 3.0) * 0.35;  // thin horizontal streak
+  return acc * uSunS.z;
+}
+void main() {
+  vec2 uv = vUV;
+  vec2 cc = uv - 0.5;
+  float r2 = dot(cc, cc);
+  // very slight lateral chromatic aberration toward the corners
+  vec2 ca = cc * r2 * 0.0035;
+  vec3 hdr = vec3(texture(uHDR, uv + ca).r, texture(uHDR, uv).g, texture(uHDR, uv - ca).b);
+  vec3 bloom = texture(uBloom, uv).rgb;
+  vec3 c = mix(hdr, bloom, uBloomK) + flare(uv) * 4.0;
+  c *= uSunCol.w;
+  c = agx(c);
+  // grade: cool lift in the shadows, faint warmth in the highlights
+  float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  c += vec3(0.004, 0.009, 0.018) * (1.0 - l) * (1.0 - l);
+  c = mix(c, c * vec3(1.03, 1.0, 0.96), smoothstep(0.55, 1.0, l));
+  // vignette and grain
+  c *= 1.0 - 0.42 * smoothstep(0.08, 0.62, r2 * 1.5);
+  c += (hash(uv * uRes.xy + fract(uTime) * 91.7) - 0.5) * uGrain;
+  o = vec4(clamp(c, 0.0, 1.0), 1.0);
+}`;
+const FXAA_FS = `
+in vec2 vUV; out vec4 o;
+uniform sampler2D uSrc;
+float lum(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
+void main() {
+  vec2 px = uRes.zw;
+  vec3 rgbM = texture(uSrc, vUV).rgb;
+  vec3 rgbNW = texture(uSrc, vUV + vec2(-1, -1) * px).rgb, rgbNE = texture(uSrc, vUV + vec2(1, -1) * px).rgb;
+  vec3 rgbSW = texture(uSrc, vUV + vec2(-1, 1) * px).rgb, rgbSE = texture(uSrc, vUV + vec2(1, 1) * px).rgb;
+  float lM = lum(rgbM), lNW = lum(rgbNW), lNE = lum(rgbNE), lSW = lum(rgbSW), lSE = lum(rgbSE);
+  float lMin = min(lM, min(min(lNW, lNE), min(lSW, lSE))), lMax = max(lM, max(max(lNW, lNE), max(lSW, lSE)));
+  vec2 dir = vec2(-((lNW + lNE) - (lSW + lSE)), ((lNW + lSW) - (lNE + lSE)));
+  float red = max((lNW + lNE + lSW + lSE) * 0.03125, 1.0 / 128.0);
+  float rcp = 1.0 / (min(abs(dir.x), abs(dir.y)) + red);
+  dir = clamp(dir * rcp, -8.0, 8.0) * px;
+  vec3 A = 0.5 * (texture(uSrc, vUV + dir * (1.0 / 3.0 - 0.5)).rgb + texture(uSrc, vUV + dir * (2.0 / 3.0 - 0.5)).rgb);
+  vec3 B = A * 0.5 + 0.25 * (texture(uSrc, vUV - dir * 0.5).rgb + texture(uSrc, vUV + dir * 0.5).rgb);
+  float lB = lum(B);
+  o = vec4((lB < lMin || lB > lMax) ? A : B, 1.0);
+}`;
+let downProg, upProg, finalProg, fxaaProg;
+function setupPost() {
+  downProg = program('bloomDown', FULLSCREEN_VS, DOWN_FS);
+  upProg = program('bloomUp', FULLSCREEN_VS, UP_FS);
+  finalProg = program('final', FULLSCREEN_VS, FINAL_FS);
+  fxaaProg = program('fxaa', FULLSCREEN_VS, FXAA_FS);
+}
+/** Where is the sun on screen, and how much of it is not hidden by the station? */
+function sunOnScreen() {
+  const L = WORLD.sunDir, vp = cam.vp;
+  const cx = vp[0] * L[0] + vp[4] * L[1] + vp[8] * L[2], cy = vp[1] * L[0] + vp[5] * L[1] + vp[9] * L[2], cw = vp[3] * L[0] + vp[7] * L[1] + vp[11] * L[2];
+  if (cw <= 0) return null;
+  const x = cx / cw, y = cy / cw;
+  if (Math.abs(x) > 1.4 || Math.abs(y) > 1.4) return null;
+  // occlusion: a few rays toward the sun against the pick proxies
+  let vis = 0;
+  const offs = [[0, 0], [0.004, 0], [-0.004, 0], [0, 0.004], [0, -0.004]];
+  for (const [a, b] of offs) {
+    const d = v3.norm([L[0] + a, L[1] + b, L[2] - a]);
+    const R = { o: cam.eye, d };
+    let hit = hitCylY(R, 0, 0, 40, -150, 178) < Infinity || hitCylY(R, 0, 0, 155, 0, 60) < Infinity || hitAnnulus(R, -171, 285, 400) < Infinity || hitSphere(R, ST.antenna.hub, 44) < Infinity;
+    for (const tr of SIM.trains) if (!hit) for (const c of tr.cars) if (hitSphere(R, c, 3) < Infinity) { hit = true; break; }
+    vis += hit ? 0 : 0.2;
+  }
+  const edge = 1 - smoothstep(0.9, 1.35, Math.max(Math.abs(x), Math.abs(y)));
+  return [x * 0.5 + 0.5, y * 0.5 + 0.5, vis * edge];
+}
+function postProcess(t) {
+  // resolve MSAA into the HDR texture
+  if (POST.msaa) {
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, POST.msFBO);
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, RT.hdrFBO);
+    gl.blitFramebuffer(0, 0, RT.w, RT.h, 0, 0, RT.w, RT.h, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null); gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+  }
+  gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND);
+  // bloom: downsample chain...
+  gl.useProgram(downProg.p);
+  gl.activeTexture(gl.TEXTURE0); gl.uniform1i(downProg.u.uSrc, 0);
+  let src = RT.hdrTex, sw = RT.w, sh = RT.h;
+  POST.mips.forEach((m, i) => {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, m.fbo); gl.viewport(0, 0, m.w, m.h);
+    gl.bindTexture(gl.TEXTURE_2D, src);
+    gl.uniform2f(downProg.u.uTexel, 1 / sw, 1 / sh);
+    gl.uniform1i(downProg.u.uFirst, i === 0 ? 1 : 0);
+    drawFullscreen();
+    src = m.tex; sw = m.w; sh = m.h;
+  });
+  // ...then tent upsample, accumulating into each larger level
+  gl.useProgram(upProg.p);
+  gl.uniform1i(upProg.u.uSrc, 0); gl.uniform1f(upProg.u.uRadius, 1.0);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+  for (let i = POST.mips.length - 1; i > 0; i--) {
+    const s = POST.mips[i], d = POST.mips[i - 1];
+    gl.bindFramebuffer(gl.FRAMEBUFFER, d.fbo); gl.viewport(0, 0, d.w, d.h);
+    gl.bindTexture(gl.TEXTURE_2D, s.tex);
+    gl.uniform2f(upProg.u.uTexel, 1 / s.w, 1 / s.h);
+    drawFullscreen();
+  }
+  gl.disable(gl.BLEND);
+  // final: flare, tone map, grade
+  const target = POST.ldr ? POST.ldr.fbo : null;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, target);
+  gl.viewport(0, 0, RT.w, RT.h);
+  gl.useProgram(finalProg.p);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, RT.hdrTex); gl.uniform1i(finalProg.u.uHDR, 0);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, POST.mips[0].tex); gl.uniform1i(finalProg.u.uBloom, 1);
+  gl.uniform1f(finalProg.u.uBloomK, BLOOM_K / POST.mips.length);
+  const sun = cam.map > 0.5 ? null : sunOnScreen();
+  gl.uniform4f(finalProg.u.uSunS, sun ? sun[0] : 0, sun ? sun[1] : 0, sun ? sun[2] * (1 - cam.map) : 0, RT.w / RT.h);
+  gl.uniform1f(finalProg.u.uGrain, 0.018);
+  gl.uniform1f(finalProg.u.uTime, (t % 100));
+  drawFullscreen();
+  if (POST.ldr) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.useProgram(fxaaProg.p);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, POST.ldr.tex); gl.uniform1i(fxaaProg.u.uSrc, 0);
+    drawFullscreen();
+  }
+}
+let BLOOM_K = QS.has('bloom') ? parseFloat(QS.get('bloom')) : 0.32;
+
+// =====================================================================
+//  18. Sango (easter egg, as in the PV): coral droplet body, tilted halo,
+//      ribbon tail, two small dark oval eyes that blink. Lives in the
+//      observation dome and only appears when the camera comes close.
+//      Also the transparent glass of the dome.
+// =====================================================================
+const SANGO_VS = `
+layout(location=0) in vec3 aPos;
+layout(location=1) in vec3 aNrm;
+layout(location=2) in vec4 aAttr;
+uniform mat4 uModel;
+uniform int uMode;          // 0 body, 1 halo, 2 ribbon, 3 dome glass
+uniform float uT;
+out vec3 vWP; out vec3 vN; out vec3 vLP; out float vU;
+void main() {
+  vec3 p = aPos, n = aNrm;
+  vU = aAttr.y;
+  if (uMode == 2) {
+    // ribbon: u along the tail, v across; waves travel toward the tip
+    float u = aAttr.y, v = aAttr.z;
+    float wv = v * 0.36 * (1.0 - 0.85 * u);
+    float tw = 0.9 + u * 2.4 + 0.5 * sin(uT * 0.8);              // the ribbon twists as it trails
+    vec3 across = vec3(0.0, sin(tw), cos(tw));
+    vec3 c = vec3(-0.9 - u * 2.75, 0.36 * sin(u * 5.0 - uT * 5.0) * u, 0.145 * sin(u * 3.0 - uT * 3.0));
+    p = c + across * wv;
+    vec3 pu = vec3(-2.75, 0.36 * (cos(u * 5.0 - uT * 5.0) * 5.0 * u + sin(u * 5.0 - uT * 5.0)), 0.435 * cos(u * 3.0 - uT * 3.0));
+    n = normalize(cross(pu, across));
+  }
+  vLP = p;
+  vec4 wp = uModel * vec4(p, 1.0);
+  vWP = wp.xyz; vN = mat3(uModel) * n;
+  gl_Position = uViewProj * wp;
+}`;
+const SANGO_FS = `
+in vec3 vWP; in vec3 vN; in vec3 vLP; in float vU;
+out vec4 o;
+uniform samplerCube uEnv; uniform samplerCube uIrr;
+uniform int uMode; uniform float uBlink; uniform float uVis;
+const vec3 CORAL = vec3(0.694, 0.184, 0.100), CORAL_L = vec3(0.914, 0.486, 0.345), INK = vec3(0.007, 0.007, 0.0065);
+void main() {
+  vec3 N = normalize(vN), V = normalize(uCam.xyz - vWP), L = uSun.xyz;
+  if (uMode == 3) {                      // dome glass: fresnel reflection, faint tint
+    if (dot(N, V) < 0.0) N = -N;
+    float f = 0.04 + 0.96 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
+    vec3 R = reflect(-V, N);
+    vec3 refl = textureLod(uEnv, R, 1.0).rgb;
+    float spec = pow(max(dot(R, L), 0.0), 600.0) * 60.0;
+    o = vec4((refl * f + spec * f + vec3(0.012, 0.02, 0.026)) , 0.10 + 0.55 * f);
+    return;
+  }
+  if (uMode == 1) {                      // halo: emissive ring
+    o = vec4(mix(CORAL, CORAL_L, 0.6) * 3.2 * uVis, 1.0);
+    return;
+  }
+  if (dot(N, V) < 0.0) N = -N;
+  vec3 base = uMode == 2 ? mix(CORAL, CORAL_L, vU) : mix(CORAL * 0.95, CORAL_L, clamp(vLP.y * 0.35 + 0.25, 0.0, 1.0) * 0.45);
+  float ndl = dot(N, L);
+  float wrap = max((ndl + 0.45) / 1.45, 0.0);               // soft, slightly translucent look
+  vec3 col = base * (uSunCol.rgb * uSun.w * wrap / PI + texture(uIrr, N).rgb * 1.2);
+  float rim = pow(1.0 - max(dot(N, V), 0.0), 2.5);
+  col += CORAL_L * rim * 0.55 + base * 0.22;                 // rim + faint inner glow
+  vec3 H = normalize(L + V);
+  col += vec3(1.0) * pow(max(dot(N, H), 0.0), 60.0) * 0.6 * max(ndl, 0.0);
+  if (uMode == 0) {
+    // two small dark oval eyes on the +z side, blinking by squashing vertically
+    const vec3 E0 = vec3(0.545, 0.236, 0.855), E1 = vec3(0.055, 0.236, 1.0);
+    float squash = 1.0 - 0.93 * uBlink;
+    for (int i = 0; i < 2; i++) {
+      vec3 e = i == 0 ? E0 : E1;
+      vec2 d = vec2((vLP.x - e.x) / 0.1, (vLP.y - e.y) / (0.142 * squash));
+      float inside = step(dot(d, d), 1.0) * step(0.2, vLP.z);
+      col = mix(col, INK + vec3(0.9) * step(length(d - vec2(0.35, 0.45)), 0.28) * step(0.5, squash) * 0.8, inside);
+    }
+  }
+  o = vec4(col * uVis, 1.0);
+}`;
+let sangoProg = null;
+function buildSango() {
+  sangoProg = program('sango', SANGO_VS, SANGO_FS);
+  // body: UV sphere reshaped like the PV droplet (back half stretched, narrowed)
+  const b = new MeshBuilder();
+  const NU = 40, NV = 24, pos = [], idx = [];
+  const shape = (d) => { const back = Math.max(0, -d[0]); return [d[0] * (1 + 0.6 * back), d[1] * (1 - 0.22 * back), d[2] * (1 - 0.22 * back)]; };
+  for (let i = 0; i <= NV; i++) {
+    const th = i / NV * Math.PI;
+    for (let k = 0; k <= NU; k++) {
+      const ph = k / NU * Math.PI * 2;
+      const d = [Math.cos(th), Math.sin(th) * Math.cos(ph), Math.sin(th) * Math.sin(ph)];
+      pos.push(shape(d));
+    }
+  }
+  const nrm = pos.map(() => [0, 0, 0]);
+  for (let i = 0; i < NV; i++) for (let k = 0; k < NU; k++) {
+    const a = i * (NU + 1) + k, c = a + NU + 1;
+    for (const [p, q, r] of [[a, c, a + 1], [a + 1, c, c + 1]]) {
+      const n = v3.cross(v3.sub(pos[q], pos[p]), v3.sub(pos[r], pos[p]));
+      for (const j of [p, q, r]) nrm[j] = v3.add(nrm[j], n);
+      idx.push(p, q, r);
+    }
+  }
+  pos.forEach((p, i) => { let n = v3.norm(nrm[i]); if (v3.dot(n, p) < 0) n = v3.mul(n, -1); b.vert(p, n, 0); });
+  b.idx = idx;
+  SANGO.body = b.upload();
+  // halo: thin torus of radius 1.78 in the local xz plane
+  const h = new MeshBuilder(), fr = [];
+  for (let i = 0; i <= 96; i++) { const a = i / 96 * Math.PI * 2; fr.push({ p: [Math.cos(a) * 1.78, 0, Math.sin(a) * 1.78], T: [-Math.sin(a), 0, Math.cos(a)], N: [0, 1, 0], B: [Math.cos(a), 0, Math.sin(a)], s: i }); }
+  h.sweepTube(fr, 0.045, 8, 0);
+  SANGO.halo = h.upload();
+  // ribbon strip (shaped in the vertex shader)
+  const r = new MeshBuilder();
+  const NR = 48;
+  for (let i = 0; i <= NR; i++) for (const v of [-1, 1]) r.vert([0, 0, 0], [0, 1, 0], 0, i / NR, v);
+  for (let i = 0; i < NR; i++) r.quad(i * 2, i * 2 + 2, i * 2 + 3, i * 2 + 1);
+  SANGO.ribbon = r.upload();
+  // dome glass
+  const g = new MeshBuilder(), DC = ST.dome.c, DR = ST.dome.r - 0.2;
+  const prof = [];
+  for (let i = 0; i <= 16; i++) { const t = i / 16 * Math.PI / 2; prof.push([Math.cos(t) * DR + 1e-3, Math.sin(t) * DR]); }
+  g.lathe(DC, prof, 48, 0);
+  SANGO.glass = g.upload();
+  SANGO.pos = [DC[0] - 3, DC[1] + 7, DC[2] + 1.5];
+}
+function sangoModel(t, extra) {
+  const S = 1.15;                                     // body radius in metres
+  const bob = Math.sin(t * 1.1) * 0.35;
+  const head = 0.25 * Math.sin(t * 0.5);              // gentle sway, like the PV
+  // local +x (round head) points north, local +z (the face) looks east, toward the terminal
+  let X = [-Math.sin(head), 0, -Math.cos(head)], Y = [0, 1, 0], Z = v3.cross(X, Y);
+  let M = [X, Y, Z];
+  if (extra) M = extra(M);
+  const p = v3.add(SANGO.pos, [0, bob, 0]);
+  const m = new Float32Array(16);
+  for (let c = 0; c < 3; c++) { m[c * 4] = M[c][0] * S; m[c * 4 + 1] = M[c][1] * S; m[c * 4 + 2] = M[c][2] * S; }
+  m[12] = p[0]; m[13] = p[1]; m[14] = p[2]; m[15] = 1;
+  return m;
+}
+function renderSango(t) {
+  const u = sangoProg.u;
+  gl.useProgram(sangoProg.p);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_CUBE_MAP, envCube); gl.uniform1i(u.uEnv, 0);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_CUBE_MAP, irrCube); gl.uniform1i(u.uIrr, 1);
+  gl.uniform1f(u.uT, t % 1000);
+  gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LESS); gl.depthMask(true);
+  if (SANGO.visible > 0.01) {
+    // blink: a quick squash every few seconds
+    const bt = t % 4.7, blink = bt < 0.16 ? Math.sin(bt / 0.16 * Math.PI) : 0;
+    gl.uniform1f(u.uBlink, blink);
+    gl.uniform1f(u.uVis, SANGO.visible);
+    const base = sangoModel(t);
+    gl.uniformMatrix4fv(u.uModel, false, base);
+    gl.uniform1i(u.uMode, 0);
+    gl.bindVertexArray(SANGO.body.vao); gl.drawElements(gl.TRIANGLES, SANGO.body.count, gl.UNSIGNED_INT, 0);
+    gl.uniform1i(u.uMode, 2);
+    gl.bindVertexArray(SANGO.ribbon.vao); gl.drawElements(gl.TRIANGLES, SANGO.ribbon.count, gl.UNSIGNED_INT, 0);
+    // halo tilts: about x by 0.45 + 0.12 sin(0.7 t), then about z by 0.25 (as in the PV)
+    const a = 0.45 + 0.12 * Math.sin(t * 0.7), b = 0.25;
+    const halo = sangoModel(t, ([X, Y, Z]) => {
+      const y1 = v3.add(v3.mul(Y, Math.cos(a)), v3.mul(Z, Math.sin(a))), z1 = v3.sub(v3.mul(Z, Math.cos(a)), v3.mul(Y, Math.sin(a)));
+      const x2 = v3.add(v3.mul(X, Math.cos(b)), v3.mul(y1, Math.sin(b))), y2 = v3.sub(v3.mul(y1, Math.cos(b)), v3.mul(X, Math.sin(b)));
+      return [x2, y2, z1];
+    });
+    gl.uniformMatrix4fv(u.uModel, false, halo);
+    gl.uniform1i(u.uMode, 1);
+    gl.bindVertexArray(SANGO.halo.vao); gl.drawElements(gl.TRIANGLES, SANGO.halo.count, gl.UNSIGNED_INT, 0);
+  }
+  gl.bindVertexArray(null);
+}
+function renderDomeGlass() {
+  const u = sangoProg.u;
+  gl.useProgram(sangoProg.p);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_CUBE_MAP, envCube); gl.uniform1i(u.uEnv, 0);
+  gl.uniformMatrix4fv(u.uModel, false, m4.ident());
+  gl.uniform1i(u.uMode, 3);
+  gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LESS); gl.depthMask(false);
+  gl.enable(gl.BLEND); gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE);
+  gl.bindVertexArray(SANGO.glass.vao); gl.drawElements(gl.TRIANGLES, SANGO.glass.count, gl.UNSIGNED_INT, 0);
+  gl.bindVertexArray(null);
+  gl.disable(gl.BLEND); gl.depthMask(true);
+}
+
+// =====================================================================
 //  15. Frame setup & main loop
 // =====================================================================
 function resize() {
@@ -3686,7 +4111,7 @@ function frame() {
 
   renderShadow();
 
-  gl.bindFramebuffer(gl.FRAMEBUFFER, RT.hdrFBO);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, POST.msaa ? POST.msFBO : RT.hdrFBO);
   gl.viewport(0, 0, RT.w, RT.h);
   gl.clearColor(0, 0, 0, 1);
   gl.clearDepth(1);
@@ -3696,6 +4121,7 @@ function frame() {
 
   // the station
   renderSolids(SIM.heat);
+  renderSango(t);
 
   // background (planet + sky) only where nothing was drawn
   gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(false);
@@ -3712,6 +4138,7 @@ function frame() {
   gl.disable(gl.BLEND);
   gl.depthMask(true);
   renderRibbons(lerp(1.6, 4.2, cam.map), lerp(2.2, 5.5, cam.map));
+  renderDomeGlass();
   // glow sprites, streaks, the beam
   gl.useProgram(spriteProg.p);
   gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LEQUAL); gl.depthMask(false);
@@ -3720,13 +4147,7 @@ function frame() {
   gl.disable(gl.BLEND); gl.depthMask(true);
   gl.disable(gl.DEPTH_TEST);
 
-  // composite to screen
-  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-  gl.viewport(0, 0, canvas.width, canvas.height);
-  gl.useProgram(compProg.p);
-  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, RT.hdrTex);
-  gl.uniform1i(compProg.u.uHDR, 0);
-  drawFullscreen();
+  postProcess(t);
 
   UI.update(t, dt);
   audioTick(t);
@@ -3752,9 +4173,10 @@ const bootSteps = [
     ribbonProg = program('ribbon', RIBBON_VS, RIBBON_FS);
     spriteProg = program('sprite', SPRITE_VS, SPRITE_FS);
     compProg = program('composite', FULLSCREEN_VS, COMPOSITE_FS);
+    setupPost();
     buildStars();
   }],
-  ['建造太空站 Building the station', () => { buildStation(); setupShadow(); }],
+  ['建造太空站 Building the station', () => { buildStation(); buildSango(); setupShadow(); }],
   ['排定時刻表 Scheduling trains', () => { setupDynamics(); }],
   ['烘焙星空 Baking the sky', function* () { yield* bakeSky(); }],
   ['烘焙環境光 Baking planet light', () => { resize(); updateCamera(0); writeFrame(nowS()); bakeEnvironment(); }],
