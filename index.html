@@ -1,0 +1,693 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>夏日黃昏海堤</title>
+<style>
+  html,body{margin:0;height:100%;background:#0b0710;overflow:hidden}
+  canvas{display:block;width:100vw;height:100vh}
+  #hud{position:fixed;left:14px;bottom:12px;color:#ffd9b0;font:12px/1.5 system-ui,sans-serif;opacity:.55;pointer-events:none;text-shadow:0 1px 3px #0008}
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="hud">1 / 2 / 3 切換鏡頭 · 滑鼠微移視角</div>
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+
+/* ------------------------------------------------------------------ params */
+const Q = new URLSearchParams(location.search);
+const FIXED = Q.has('t');                       // 截圖模式：固定時間、固定鏡頭
+let camIndex = parseInt(Q.get('cam') ?? '0');
+const SHOW_FPS = Q.has('fps');
+if (FIXED || SHOW_FPS) document.getElementById('hud').style.display = FIXED ? 'none' : 'block';
+
+/* ------------------------------------------------------------------ renderer */
+const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+let basePR = Math.min(window.devicePixelRatio, 1.5);
+let pr = Q.has('pr') ? parseFloat(Q.get('pr')) : basePR;
+renderer.setPixelRatio(pr);
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.95;
+renderer.shadowMap.enabled = true;
+renderer.info.autoReset = false;
+renderer.shadowMap.type = THREE.PCFShadowMap;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.3, 9000);
+
+/* ------------------------------------------------------------------ shared GLSL: sky */
+const SUN_DIR = new THREE.Vector3(0.28, 0.055, -1).normalize();
+const uniforms = {
+  uTime: { value: 0 },
+  uSunDir: { value: SUN_DIR },
+};
+
+const GLSL_COMMON = /* glsl */`
+uniform float uTime;
+uniform vec3 uSunDir;
+float h21(vec2 p){ p=fract(p*vec2(123.34,456.21)); p+=dot(p,p+45.32); return fract(p.x*p.y); }
+float vnoise(vec2 p){
+  vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
+  float a=h21(i), b=h21(i+vec2(1,0)), c=h21(i+vec2(0,1)), d=h21(i+vec2(1,1));
+  return mix(mix(a,b,f.x), mix(c,d,f.x), f.y);
+}
+float fbm5(vec2 p){ float s=0.0,a=0.5; for(int i=0;i<5;i++){ s+=a*vnoise(p); p=p*2.03+vec2(17.1,9.7); a*=0.5; } return s; }
+float fbm3(vec2 p){ float s=0.0,a=0.5; for(int i=0;i<3;i++){ s+=a*vnoise(p); p=p*2.03+vec2(17.1,9.7); a*=0.5; } return s; }
+
+vec3 skyGradient(vec3 d){
+  float e = clamp(d.y, 0.0, 1.0);
+  float sd = max(dot(d, uSunDir), 0.0);
+  vec3 zen = vec3(0.018,0.040,0.150);
+  vec3 mid = vec3(0.26,0.14,0.32);
+  vec3 low = vec3(0.95,0.34,0.15);
+  vec3 hor = vec3(1.7,0.58,0.20);
+  vec3 col = mix(hor, low, smoothstep(0.0,0.10,e));
+  col = mix(col, mid, smoothstep(0.07,0.38,e));
+  col = mix(col, zen, smoothstep(0.30,0.95,e));
+  // 太陽側暖暈、背陽側冷暗
+  float az = 0.5 + 0.5*dot(normalize(d.xz+1e-4), normalize(uSunDir.xz));
+  col *= mix(0.55, 1.0, az);
+  col += vec3(1.5,0.55,0.18) * pow(sd,4.0) * exp(-e*5.0);
+  col += vec3(2.4,0.95,0.32) * pow(sd,48.0);
+  return col;
+}
+float sunDisc(vec3 d){
+  float c = dot(d, uSunDir);
+  return smoothstep(0.99992, 0.99997, c);
+}
+vec3 skyColor(vec3 d, float clouds){
+  vec3 col = skyGradient(d);
+  if(clouds > 0.0 && d.y > 0.004){
+    float sd = max(dot(d, uSunDir), 0.0);
+    vec2 sdir = normalize(uSunDir.xz);
+    vec2 p = d.xz/(d.y+0.10)*0.55 + vec2(uTime*0.0035, 0.0);
+    p *= vec2(1.0, 1.7);
+    float base = fbm5(p);
+    float cov = smoothstep(0.46, 0.80, base);
+    float toward = fbm5(p + sdir*vec2(1.0,1.7)*0.05);
+    float lit = clamp((base - toward)*9.0 + 0.45, 0.0, 1.0);
+    vec3 sunSide  = vec3(1.9,0.72,0.28);
+    vec3 shade    = vec3(0.16,0.09,0.20);
+    vec3 pinkSide = vec3(0.65,0.30,0.42);
+    vec3 warm = mix(pinkSide, sunSide, pow(sd,0.7));
+    vec3 cc = mix(shade, warm, lit);
+    cc += vec3(2.0,0.9,0.4) * pow(sd,10.0) * (1.0-cov) * cov * 4.0; // 銀邊
+    float fade = smoothstep(0.004, 0.16, d.y);
+    col = mix(col, cc, cov * fade * clouds);
+    // 高空卷雲
+    vec2 q = d.xz/(d.y+0.35)*vec2(0.5,2.6) + vec2(uTime*0.002,3.3);
+    float ci = smoothstep(0.5,0.9,fbm3(q*1.7));
+    col = mix(col, mix(vec3(0.55,0.25,0.38), vec3(1.9,0.8,0.4), pow(sd,1.2)), ci*0.55*smoothstep(0.08,0.4,d.y)*clouds);
+  }
+  return col;
+}
+`;
+
+/* ------------------------------------------------------------------ sky dome */
+const skyMat = new THREE.ShaderMaterial({
+  uniforms,
+  side: THREE.BackSide, depthWrite: false, depthTest: false,
+  vertexShader: `varying vec3 vDir; void main(){ vDir = position; vec4 p = projectionMatrix*modelViewMatrix*vec4(position,1.0); gl_Position = p.xyww; }`,
+  fragmentShader: GLSL_COMMON + `
+  varying vec3 vDir;
+  void main(){
+    vec3 d = normalize(vDir);
+    vec3 col = skyColor(d, 1.0);
+    float s = sunDisc(d);
+    col += vec3(60.0,30.0,10.0)*s;
+    gl_FragColor = vec4(col,1.0);
+  }`
+});
+const sky = new THREE.Mesh(new THREE.SphereGeometry(500, 48, 24), skyMat);
+sky.renderOrder = -10; sky.frustumCulled = false;
+scene.add(sky);
+
+/* 環境貼圖：把天空烘成 PMREM 供 PBR 材質使用 */
+{
+  const envScene = new THREE.Scene();
+  const envSky = new THREE.Mesh(new THREE.SphereGeometry(500, 32, 16), new THREE.ShaderMaterial({
+    uniforms, side: THREE.BackSide, depthWrite: false,
+    vertexShader: `varying vec3 vDir; void main(){ vDir = position; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+    fragmentShader: GLSL_COMMON + `varying vec3 vDir; void main(){ vec3 d=normalize(vDir); gl_FragColor=vec4(min(skyColor(d,1.0),vec3(6.0)),1.0);} `
+  }));
+  envScene.add(envSky);
+  const pm = new THREE.PMREMGenerator(renderer);
+  scene.environment = pm.fromScene(envScene, 0.02).texture;
+  scene.environmentIntensity = 0.85;
+  pm.dispose();
+}
+
+/* ------------------------------------------------------------------ lights */
+const sun = new THREE.DirectionalLight(0xff9a4a, 3.4);
+sun.position.copy(SUN_DIR).multiplyScalar(120).add(new THREE.Vector3(0, 0, 8));
+sun.target.position.set(0, 2, 8);
+sun.castShadow = true;
+sun.shadow.mapSize.set(4096, 4096);
+Object.assign(sun.shadow.camera, { left: -34, right: 34, top: 34, bottom: -34, near: 10, far: 260 });
+sun.shadow.bias = -0.0002; sun.shadow.normalBias = 0.03;
+scene.add(sun, sun.target);
+
+/* ------------------------------------------------------------------ procedural textures */
+function rng(seed){ let s = seed >>> 0; return () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296; }
+
+function concreteTextures(seed, { w = 1024, h = 1024, jointsX = 4, jointsY = 0, stain = 1 } = {}){
+  const r = rng(seed);
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d');
+  g.fillStyle = '#8f8a82'; g.fillRect(0, 0, w, h);
+  // 大塊色斑
+  for (let i = 0; i < 90; i++){
+    const x = r()*w, y = r()*h, rad = 40 + r()*180, v = 130 + r()*30 | 0;
+    const gr = g.createRadialGradient(x,y,0,x,y,rad);
+    gr.addColorStop(0, `rgba(${v},${v-3},${v-8},0.18)`); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = gr; g.fillRect(x-rad, y-rad, rad*2, rad*2);
+  }
+  // 細顆粒
+  const img = g.getImageData(0,0,w,h), d = img.data;
+  for (let i = 0; i < d.length; i += 4){
+    const n = (r()-0.5)*38;
+    d[i]+=n; d[i+1]+=n; d[i+2]+=n*0.95;
+  }
+  g.putImageData(img,0,0);
+  // 氣孔
+  for (let i = 0; i < 260; i++){
+    g.fillStyle = `rgba(40,36,32,${0.25+r()*0.35})`;
+    g.beginPath(); g.arc(r()*w, r()*h, 0.6+r()*1.8, 0, 7); g.fill();
+  }
+  // 雨痕
+  for (let i = 0; i < 26*stain; i++){
+    const x = r()*w, y = r()*h*0.6, len = 80 + r()*260, wd = 2 + r()*9;
+    const gr = g.createLinearGradient(0,y,0,y+len);
+    gr.addColorStop(0,'rgba(60,54,46,0)'); gr.addColorStop(0.15,'rgba(60,54,46,0.22)'); gr.addColorStop(1,'rgba(60,54,46,0)');
+    g.fillStyle = gr; g.fillRect(x, y, wd, len);
+  }
+  // 接縫
+  g.strokeStyle = 'rgba(35,32,30,0.85)'; g.lineWidth = 3;
+  for (let i = 0; i < jointsX; i++){ const x = (i)*w/jointsX + 1.5; g.beginPath(); g.moveTo(x,0); g.lineTo(x,h); g.stroke(); }
+  for (let i = 0; i < jointsY; i++){ const y = (i)*h/jointsY + 1.5; g.beginPath(); g.moveTo(0,y); g.lineTo(w,y); g.stroke(); }
+  const map = new THREE.CanvasTexture(c);
+  map.colorSpace = THREE.SRGBColorSpace; map.wrapS = map.wrapT = THREE.RepeatWrapping;
+  map.anisotropy = 8;
+  const bump = new THREE.CanvasTexture(c);
+  bump.wrapS = bump.wrapT = THREE.RepeatWrapping; bump.anisotropy = 8;
+  return { map, bump };
+}
+
+function radialTexture(stops){
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d'); const gr = g.createRadialGradient(64,64,0,64,64,64);
+  stops.forEach(([o,col]) => gr.addColorStop(o,col));
+  g.fillStyle = gr; g.fillRect(0,0,128,128);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+
+/* 濕度：低於浪線的部分變暗、帶藻綠 */
+function makeWet(mat, { wetTop = 1.2, dryBelow = 0.2 } = {}){
+  mat.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying float vWY;')
+      .replace('#include <project_vertex>', `#include <project_vertex>
+        vec4 wpp = vec4(transformed,1.0);
+        #ifdef USE_INSTANCING
+          wpp = instanceMatrix * wpp;
+        #endif
+        vWY = (modelMatrix*wpp).y;`);
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>\nvarying float vWY;`)
+      .replace('#include <map_fragment>', `#include <map_fragment>
+        float wet = 1.0 - smoothstep(${dryBelow.toFixed(2)}, ${wetTop.toFixed(2)}, vWY);
+        diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb*vec3(0.30,0.36,0.30), wet);`);
+  };
+  return mat;
+}
+
+/* ------------------------------------------------------------------ geometry: embankment */
+const world = new THREE.Group(); scene.add(world);
+const TOP = 2.6;                                   // 步道高度
+
+const cw = concreteTextures(11, { jointsX: 2, jointsY: 0 });
+cw.map.repeat.set(24, 1); cw.bump.repeat.set(24, 1);
+const wallMat = makeWet(new THREE.MeshStandardMaterial({ map: cw.map, bumpMap: cw.bump, bumpScale: 2.2, roughness: 0.92, metalness: 0 }));
+
+const cp = concreteTextures(23, { jointsX: 1, jointsY: 1, stain: 0.3 });
+cp.map.repeat.set(40, 2); cp.bump.repeat.set(40, 2);
+const pathMat = new THREE.MeshStandardMaterial({ map: cp.map, bumpMap: cp.bump, bumpScale: 1.5, roughness: 0.9, color: 0xd8d2ca });
+
+function box(w,h,d,mat,x,y,z,{cast=true,recv=true}={}){
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mat);
+  m.position.set(x,y,z); m.castShadow = cast; m.receiveShadow = recv; world.add(m); return m;
+}
+// 海側垂直牆面（延伸到水下）
+box(200, 6, 1.2, wallMat, 0, TOP-3, -0.6);
+// 基腳平台
+box(200, 0.9, 1.6, wallMat, 0, 0.1, -1.4);
+// 步道
+box(200, 0.5, 5.4, pathMat, 0, TOP-0.25, 2.7);
+// 防浪矮牆
+box(200, 0.55, 0.45, wallMat, 0, TOP+0.275, 0.25);
+// 陸側路面
+const asphalt = new THREE.MeshStandardMaterial({ color: 0x3a3838, roughness: 0.95 });
+box(200, 0.4, 9, asphalt, 0, TOP-0.5, 10.4);
+// 遠處地面
+const grassGround = new THREE.MeshStandardMaterial({ color: 0x4a5230, roughness: 1 });
+box(300, 0.4, 80, grassGround, 0, TOP-0.7, 55);
+
+// 欄杆
+{
+  const metal = new THREE.MeshStandardMaterial({ color: 0x8a8f96, roughness: 0.45, metalness: 0.7 });
+  const N = 100, span = 2.0;
+  const post = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.035,0.04,1.05,8), metal, N);
+  const m4 = new THREE.Matrix4();
+  for (let i = 0; i < N; i++){ m4.setPosition((i-N/2)*span, TOP+0.55+0.525, 0.25); post.setMatrixAt(i, m4); }
+  post.castShadow = true; world.add(post);
+  const rail = (y, rr) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(rr, rr, 200, 8), metal);
+    m.rotation.z = Math.PI/2; m.position.set(0, y, 0.25); m.castShadow = true; world.add(m); };
+  rail(TOP+0.55+1.02, 0.03); rail(TOP+0.55+0.62, 0.02); rail(TOP+0.55+0.28, 0.02);
+}
+
+/* 消波塊（Tetrapod） */
+{
+  const parts = [];
+  const dirs = [[1,1,1],[1,-1,-1],[-1,1,-1],[-1,-1,1]].map(v => new THREE.Vector3(...v).normalize());
+  dirs.forEach(dv => {
+    const g = new THREE.CylinderGeometry(0.30, 0.42, 1.35, 10, 1);
+    g.translate(0, 0.62, 0);
+    const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0), dv);
+    g.applyQuaternion(q); parts.push(g);
+  });
+  const tg = mergeGeometries(parts);
+  const tc = concreteTextures(5, { jointsX: 0, stain: 0.2, w: 512, h: 512 });
+  tc.map.repeat.set(1,1);
+  const tMat = makeWet(new THREE.MeshStandardMaterial({ map: tc.map, bumpMap: tc.bump, bumpScale: 2, roughness: 0.95, color: 0xcfc9c0 }), { wetTop: 1.1, dryBelow: 0.1 });
+  const rows = [
+    { z: -2.9, y: 0.05, n: 34, dx: 3.1 },
+    { z: -5.4, y: -0.25, n: 32, dx: 3.3 },
+    { z: -3.6, y: 1.25, n: 30, dx: 3.4 },
+    { z: -7.4, y: -0.6, n: 24, dx: 4.5 },
+  ];
+  const total = rows.reduce((a,r)=>a+r.n,0);
+  const im = new THREE.InstancedMesh(tg, tMat, total);
+  const r = rng(77); const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), s = new THREE.Vector3(), p = new THREE.Vector3();
+  let k = 0;
+  rows.forEach(row => { for (let i = 0; i < row.n; i++){
+    p.set((i-row.n/2)*row.dx + (r()-0.5)*1.4, row.y + (r()-0.5)*0.35, row.z + (r()-0.5)*0.8);
+    e.set(r()*6.28, r()*6.28, r()*6.28); q.setFromEuler(e);
+    const sc = 1.25 + r()*0.35; s.set(sc,sc,sc);
+    m4.compose(p,q,s); im.setMatrixAt(k++, m4);
+  }});
+  im.castShadow = true; im.receiveShadow = true; world.add(im);
+}
+
+/* 路燈 */
+const lampGroup = new THREE.Group(); world.add(lampGroup);
+const lampBulbs = [];
+{
+  const pole = new THREE.MeshStandardMaterial({ color: 0x2a2c30, roughness: 0.6, metalness: 0.6 });
+  const bulbMat = new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB(6.0, 3.4, 1.4) });
+  const halo = new THREE.SpriteMaterial({ map: radialTexture([[0,'rgba(255,190,110,0.9)'],[0.25,'rgba(255,150,70,0.35)'],[1,'rgba(255,120,40,0)']]),
+    blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.55 });
+  const poolMat = new THREE.MeshBasicMaterial({ map: radialTexture([[0,'rgba(255,170,90,0.55)'],[0.5,'rgba(255,140,60,0.18)'],[1,'rgba(255,120,40,0)']]),
+    blending: THREE.AdditiveBlending, depthWrite: false, transparent: true });
+  for (let i = -6; i <= 6; i++){
+    const x = i*12 - 4, z = 4.95;
+    const p = new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.09,5.4,10), pole); p.position.set(x, TOP+2.7, z); p.castShadow = true;
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.035,0.035,1.5,8), pole); arm.rotation.x = Math.PI/2; arm.position.set(x, TOP+5.35, z-0.7); arm.castShadow = true;
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.5,0.12,0.22), pole); head.position.set(x, TOP+5.36, z-1.45);
+    const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 8), bulbMat); bulb.position.set(x, TOP+5.28, z-1.45);
+    const sp = new THREE.Sprite(halo); sp.position.copy(bulb.position); sp.scale.setScalar(2.6);
+    const pool = new THREE.Mesh(new THREE.PlaneGeometry(9,9), poolMat); pool.rotation.x = -Math.PI/2; pool.position.set(x, TOP+0.02, z-1.6);
+    lampGroup.add(p, arm, head, bulb, sp, pool); lampBulbs.push(sp);
+  }
+}
+
+/* 長椅、繫船柱等小物 */
+{
+  const wood = new THREE.MeshStandardMaterial({ color: 0x6a4a34, roughness: 0.8 });
+  const iron = new THREE.MeshStandardMaterial({ color: 0x25272a, roughness: 0.5, metalness: 0.7 });
+  [[-14,2.0],[9,2.0],[26,2.0]].forEach(([x,z]) => {
+    const b = new THREE.Group();
+    const seat = new THREE.Mesh(new THREE.BoxGeometry(1.8,0.06,0.45), wood); seat.position.y = 0.45;
+    const back = new THREE.Mesh(new THREE.BoxGeometry(1.8,0.4,0.05), wood); back.position.set(0,0.75,0.2); back.rotation.x = -0.12;
+    const l1 = new THREE.Mesh(new THREE.BoxGeometry(0.06,0.45,0.4), iron); l1.position.set(-0.8,0.22,0);
+    const l2 = l1.clone(); l2.position.x = 0.8;
+    b.add(seat, back, l1, l2); b.position.set(x, TOP, z); b.traverse(o => { o.castShadow = true; o.receiveShadow = true; }); world.add(b);
+  });
+}
+
+/* ------------------------------------------------------------------ ocean */
+const waterMat = new THREE.ShaderMaterial({
+  uniforms,
+  vertexShader: `varying vec3 vW; void main(){ vec4 w = modelMatrix*vec4(position,1.0); vW = w.xyz; gl_Position = projectionMatrix*viewMatrix*w; }`,
+  fragmentShader: GLSL_COMMON + `
+  varying vec3 vW;
+  void main(){
+    vec3 V = normalize(cameraPosition - vW);
+    float dist = length(cameraPosition - vW);
+    vec2 p = vW.xz;
+    vec2 g = vec2(0.0);
+    // 疊加多方向波
+    const int NW = 6;
+    vec2 dirs[NW]; float ks[NW]; float amps[NW]; float sp[NW];
+    dirs[0]=normalize(vec2(0.2,1.0));  ks[0]=0.22; amps[0]=0.38; sp[0]=0.8;
+    dirs[1]=normalize(vec2(-0.5,1.0)); ks[1]=0.47; amps[1]=0.20; sp[1]=1.1;
+    dirs[2]=normalize(vec2(0.8,0.6));  ks[2]=0.95; amps[2]=0.10; sp[2]=1.5;
+    dirs[3]=normalize(vec2(-0.3,1.0)); ks[3]=1.9;  amps[3]=0.05; sp[3]=2.1;
+    dirs[4]=normalize(vec2(0.9,-0.3)); ks[4]=3.7;  amps[4]=0.022; sp[4]=2.8;
+    dirs[5]=normalize(vec2(-0.7,0.7)); ks[5]=7.5;  amps[5]=0.010; sp[5]=3.6;
+    for(int i=0;i<NW;i++){
+      float ph = dot(dirs[i],p)*ks[i] + uTime*sp[i];
+      float fadeK = 1.0/(1.0 + dist*ks[i]*0.012);
+      g += dirs[i]*ks[i]*amps[i]*cos(ph)*fadeK;
+    }
+    vec3 N = normalize(vec3(-g.x, 1.0, -g.y));
+    // 波浪撞擊堤防的反彈：靠近牆面時加強擾動
+    float nearWall = smoothstep(-9.0, -0.5, vW.z);
+    N = normalize(N + vec3(0.06*sin(vW.x*1.7+uTime*1.3), 0.0, 0.05*cos(vW.x*0.9+uTime*0.9))*nearWall);
+
+    float ndv = max(dot(N,V), 0.0);
+    float F = 0.02 + 0.98*pow(1.0-ndv, 5.0);
+    vec3 R = reflect(-V, N); R.y = abs(R.y);
+    vec3 sky = skyColor(R, 0.85);
+    // 太陽反射閃光（依距離增強）
+    float sg = max(dot(R, uSunDir), 0.0);
+    vec3 glitter = vec3(2.4,1.0,0.36) * (pow(sg, 1500.0)*40.0 + pow(sg, 260.0)*4.0 + pow(sg, 30.0)*0.9);
+    // 水體本色：深處近黑藍，波峰透光偏青綠
+    float crest = clamp(0.5 + dot(g, vec2(0.5)) * 2.0, 0.0, 1.0);
+    vec3 deep = mix(vec3(0.008,0.028,0.045), vec3(0.03,0.12,0.11), crest*0.6);
+    deep += vec3(0.30,0.10,0.03) * pow(max(dot(normalize(vec3(V.x,0.0,V.z)), normalize(vec3(uSunDir.x,0.0,uSunDir.z))),0.0), 2.0) * 0.25;
+    vec3 col = mix(deep, sky, F) + glitter*F*1.2;
+    // 泡沫：牆與消波塊周圍
+    float wd = -vW.z;
+    float fn = fbm3(vec2(vW.x*1.2, vW.z*2.0) + vec2(uTime*0.15, uTime*0.25));
+    float band = smoothstep(2.6, 0.2, wd + 0.7*sin(uTime*0.7 + vW.x*0.15));
+    float foam = smoothstep(0.52, 0.8, fn + band*0.55) * band;
+    col = mix(col, vec3(1.25,0.85,0.60)*(0.7+0.5*smoothstep(-2.0,-8.0,vW.z)), foam*0.75);
+    gl_FragColor = vec4(col, 1.0);
+  }`
+});
+const water = new THREE.Mesh(new THREE.PlaneGeometry(9000, 9000), waterMat);
+water.rotation.x = -Math.PI/2; water.frustumCulled = false; scene.add(water);
+
+/* ------------------------------------------------------------------ distant: headland, lighthouse, boats */
+const ridgeMat = (idx, n) => new THREE.ShaderMaterial({
+  uniforms: { ...uniforms, uIdx: { value: idx / (n-1) } },
+  transparent: true, depthWrite: false,
+  vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+  fragmentShader: GLSL_COMMON + `
+  uniform float uIdx; varying vec2 vUv;
+  void main(){
+    float x = vUv.x*12.0 + uIdx*7.0;
+    float h = 0.08 + 0.55*fbm5(vec2(x*0.55, uIdx*3.0)) + 0.18*fbm3(vec2(x*2.4, uIdx));
+    // 左側岬角、右側漸退入海
+    float shape = smoothstep(0.78, 0.32, vUv.x) * (0.55 + 0.45*uIdx);
+    float top = h*shape*0.42;
+    float a = 1.0 - smoothstep(top-0.004, top+0.004, vUv.y);
+    if(a < 0.01) discard;
+    vec3 hazeC = skyGradient(normalize(vec3(-0.6, 0.02, -1.0)));
+    vec3 near = vec3(0.06,0.035,0.09);
+    vec3 col = mix(near, hazeC*0.75, pow(1.0-uIdx, 0.8)*0.0 + uIdx*0.72);
+    // 山稜線受背光的暖色邊
+    float rim = smoothstep(0.03, 0.0, top - vUv.y);
+    col += vec3(0.5,0.2,0.08)*rim*0.5*(1.0-uIdx*0.6);
+    gl_FragColor = vec4(col, a);
+  }`
+});
+{
+  const n = 4;
+  for (let i = 0; i < n; i++){
+    const w = 5200, h = 900;
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), ridgeMat(n-1-i, n));
+    m.position.set(-700, h/2 - 2, -2400 + i*260);   // 遠→近
+    m.renderOrder = -5 + i; m.frustumCulled = false; scene.add(m);
+  }
+}
+
+// 防波堤 + 燈塔
+const lighthouse = new THREE.Group(); scene.add(lighthouse);
+let beam;
+{
+  const dark = new THREE.MeshStandardMaterial({ color: 0x3b3a3e, roughness: 0.9 });
+  const mole = new THREE.Mesh(new THREE.BoxGeometry(6, 2.2, 150), dark); mole.position.set(-58, 0.3, -105);
+  mole.castShadow = true; scene.add(mole);
+  const white = new THREE.MeshStandardMaterial({ color: 0xe8e0d8, roughness: 0.7 });
+  const red = new THREE.MeshStandardMaterial({ color: 0xa8302a, roughness: 0.7 });
+  const t1 = new THREE.Mesh(new THREE.CylinderGeometry(1.3,1.9,6,16), white); t1.position.y = 4.6;
+  const t2 = new THREE.Mesh(new THREE.CylinderGeometry(1.0,1.3,3,16), red); t2.position.y = 9.1;
+  const lamp = new THREE.Mesh(new THREE.CylinderGeometry(0.75,0.75,1.4,12), new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB(9,6,2.5) })); lamp.position.y = 11.3;
+  const cap = new THREE.Mesh(new THREE.ConeGeometry(1.1,1.2,16), red); cap.position.y = 12.6;
+  lighthouse.add(t1,t2,lamp,cap); lighthouse.position.set(-58, 1.4, -178);
+  const bm = new THREE.SpriteMaterial({ map: radialTexture([[0,'rgba(255,230,170,1)'],[0.2,'rgba(255,190,90,0.5)'],[1,'rgba(255,150,60,0)']]), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true });
+  beam = new THREE.Sprite(bm); beam.position.set(0, 11.3, 0); beam.scale.setScalar(14); lighthouse.add(beam);
+}
+
+// 漁船
+const boats = [];
+{
+  const hullM = new THREE.MeshBasicMaterial({ color: 0x0c0810 });
+  const lightM = new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB(5,3,1.2) });
+  [[70,-520,1.4],[180,-780,2.2],[-20,-380,1]].forEach(([x,z,s]) => {
+    const b = new THREE.Group();
+    const hull = new THREE.Mesh(new THREE.BoxGeometry(9*s,1.6*s,2.4*s), hullM); hull.position.y = 0.5*s;
+    const cab = new THREE.Mesh(new THREE.BoxGeometry(2.6*s,1.8*s,1.8*s), hullM); cab.position.set(-1.6*s, 1.9*s, 0);
+    const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.06*s,0.06*s,4*s,4), hullM); mast.position.set(1.5*s, 3*s, 0);
+    const l = new THREE.Mesh(new THREE.SphereGeometry(0.28*s, 6, 4), lightM); l.position.set(1.5*s, 5.1*s, 0);
+    b.add(hull, cab, mast, l); b.position.set(x, 0, z); b.userData = { x, z, ph: x }; scene.add(b); boats.push(b);
+  });
+}
+
+/* ------------------------------------------------------------------ birds */
+const birdCount = 9;
+const birdMat = new THREE.ShaderMaterial({
+  uniforms, side: THREE.DoubleSide,
+  vertexShader: `
+    uniform float uTime; varying float vS;
+    void main(){
+      vec3 pos = position;
+      float ph = float(gl_InstanceID)*1.7;
+      float flap = sin(uTime*7.0 + ph);
+      pos.y += abs(pos.x) * (0.55*flap + 0.15) ;
+      pos.z += abs(pos.x) * 0.15;
+      vec4 wp = modelMatrix * instanceMatrix * vec4(pos,1.0);
+      gl_Position = projectionMatrix * viewMatrix * wp;
+    }`,
+  fragmentShader: `void main(){ gl_FragColor = vec4(0.018,0.010,0.028,1.0); }`
+});
+const birdGeo = new THREE.BufferGeometry();
+birdGeo.setAttribute('position', new THREE.Float32BufferAttribute([
+  0,0,-0.35,  -1.0,0,-0.10,  0,0,0.30,
+  0,0,-0.35,   1.0,0,-0.10,  0,0,0.30,
+  -1.0,0,-0.10, -1.7,0.0,0.15, -0.3,0,0.20,
+   1.0,0,-0.10,  1.7,0.0,0.15,  0.3,0,0.20,
+], 3));
+const birds = new THREE.InstancedMesh(birdGeo, birdMat, birdCount);
+birds.frustumCulled = false; scene.add(birds);
+const birdData = Array.from({length: birdCount}, (_, i) => ({ a: i*0.71, r: 30 + (i%4)*22, y: 20 + (i*7)%23, sp: 0.06 + (i%3)*0.015, cx: 20 + i*3, cz: -120 - (i%3)*30 }));
+
+/* ------------------------------------------------------------------ grass */
+{
+  const bladeG = new THREE.BufferGeometry();
+  const pos = [], uv = [], idx = [];
+  for (let b = 0; b < 3; b++){
+    const a = b*Math.PI/3, c = Math.cos(a), s = Math.sin(a), w = 0.05, h = 0.55;
+    const o = pos.length/3;
+    pos.push(-w*c,0,-w*s,  w*c,0,w*s,  0.0*c,h,0.0*s);
+    uv.push(0,0, 1,0, 0.5,1);
+    idx.push(o,o+1,o+2);
+  }
+  bladeG.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+  bladeG.setAttribute('uv', new THREE.Float32BufferAttribute(uv,2));
+  bladeG.setIndex(idx);
+  const gm = new THREE.ShaderMaterial({
+    uniforms, side: THREE.DoubleSide,
+    vertexShader: `
+      uniform float uTime; varying vec2 vUv; varying vec3 vW; varying float vSeed;
+      void main(){
+        vUv = uv;
+        vec4 inst = instanceMatrix * vec4(0.0,0.0,0.0,1.0);
+        vSeed = fract(sin(inst.x*12.9+inst.z*7.7)*43758.5);
+        vec3 pos = position;
+        float gust = sin(uTime*1.3 + inst.x*0.35) * 0.6 + sin(uTime*3.1 + inst.x*1.7 + inst.z)*0.4;
+        pos.x += gust * 0.16 * uv.y * uv.y;
+        pos.z += cos(uTime*1.1+inst.x)*0.05*uv.y*uv.y;
+        vec4 wp = modelMatrix*instanceMatrix*vec4(pos,1.0);
+        vW = wp.xyz;
+        gl_Position = projectionMatrix*viewMatrix*wp;
+      }`,
+    fragmentShader: `
+      uniform vec3 uSunDir; varying vec2 vUv; varying vec3 vW; varying float vSeed;
+      void main(){
+        vec3 V = normalize(vW - cameraPosition);
+        float back = pow(max(dot(V, uSunDir), 0.0), 3.0);
+        vec3 base = mix(vec3(0.05,0.06,0.02), vec3(0.20,0.16,0.05), vSeed);
+        vec3 tip  = mix(vec3(0.42,0.36,0.10), vec3(0.9,0.55,0.18), vSeed);
+        vec3 c = mix(base, tip, vUv.y) * (0.5 + 3.5*back*vUv.y);
+        gl_FragColor = vec4(c,1.0);
+      }`
+  });
+  const N = 9000; const im = new THREE.InstancedMesh(bladeG, gm, N);
+  const r = rng(9); const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), p = new THREE.Vector3(), s = new THREE.Vector3();
+  for (let i = 0; i < N; i++){
+    const strip = r();
+    let x = (r()-0.5)*160, z, y;
+    if (strip < 0.55){ z = 5.35 + r()*1.0; y = TOP-0.3; }           // 步道與路之間
+    else if (strip < 0.8){ z = 0.55 + r()*0.2; y = TOP; }           // 矮牆根裂縫
+    else { z = 15 + r()*30; y = TOP-0.5; }                        // 遠處草地
+    p.set(x, y, z); e.set(0, r()*6.28, 0); q.setFromEuler(e);
+    const sc = (strip>0.8 ? 1.6 : 0.8) + r()*1.1; s.set(sc, sc*(0.7+r()*0.9), sc);
+    m4.compose(p,q,s); im.setMatrixAt(i, m4);
+  }
+  im.frustumCulled = false; world.add(im);
+}
+
+/* 松樹剪影（陸側） */
+{
+  const foliage = new THREE.MeshStandardMaterial({ color: 0x1c2618, roughness: 1 });
+  const trunk = new THREE.MeshStandardMaterial({ color: 0x2b1e16, roughness: 1 });
+  const r = rng(31);
+  for (let i = 0; i < 46; i++){
+    const x = (i-23)*5.2 + (r()-0.5)*3, z = 19 + r()*10, h = 6 + r()*5;
+    const t = new THREE.Mesh(new THREE.CylinderGeometry(0.2,0.3,h*0.55,6), trunk); t.position.set(x, TOP-0.5+h*0.27, z);
+    const c = new THREE.Mesh(new THREE.SphereGeometry(h*0.36, 10, 8), foliage); c.scale.set(1.5,0.8,1.3); c.position.set(x, TOP-0.5+h*0.68, z);
+    t.castShadow = c.castShadow = true; t.receiveShadow = c.receiveShadow = true; world.add(t,c);
+  }
+}
+
+/* ------------------------------------------------------------------ post */
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth/2, innerHeight/2), 0.55, 0.75, 1.15);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+const finalPass = new ShaderPass({
+  uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uRes: { value: new THREE.Vector2(innerWidth, innerHeight) } },
+  vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+  fragmentShader: `
+    uniform sampler2D tDiffuse; uniform float uTime; varying vec2 vUv;
+    float hash(vec2 p){ return fract(sin(dot(p,vec2(12.9898,78.233)))*43758.5453); }
+    void main(){
+      vec2 c = vUv-0.5;
+      float vg = smoothstep(0.95, 0.25, length(c*vec2(1.0,1.15)));
+      vec3 col = texture2D(tDiffuse, vUv).rgb;
+      // 分離色調：陰影偏青紫、亮部偏暖
+      float l = dot(col, vec3(0.299,0.587,0.114));
+      col = mix(col, col*vec3(0.92,0.96,1.08), 1.0-smoothstep(0.0,0.35,l));
+      col = mix(col, col*vec3(1.06,1.0,0.94), smoothstep(0.4,0.9,l));
+      col *= mix(0.62, 1.0, vg);
+      col += (hash(vUv*1000.0 + fract(uTime))-0.5)*0.018;
+      gl_FragColor = vec4(col,1.0);
+    }`
+});
+composer.addPass(finalPass);
+
+/* ------------------------------------------------------------------ cameras */
+const CAMS = [
+  { pos: [-9, 4.25, 3.6],  look: [14, 3.4, -60],  fov: 52 },   // A 沿堤望向落日
+  { pos: [5.5, 4.0, 1.4],  look: [-1, 1.2, -9],   fov: 58 },   // B 探出矮牆俯視消波塊與浪
+  { pos: [2, 3.7, 3.2],    look: [-12, 5.4, 36],  fov: 54 },   // C 回望陸側，路燈與東方暮空
+];
+const look = new THREE.Vector3(), mouse = new THREE.Vector2();
+addEventListener('mousemove', e => { mouse.set(e.clientX/innerWidth-0.5, e.clientY/innerHeight-0.5); });
+addEventListener('keydown', e => { const n = parseInt(e.key); if (n >= 1 && n <= 3) camIndex = n-1; });
+
+function updateCamera(t){
+  const c = CAMS[camIndex] ?? CAMS[0];
+  const sway = FIXED ? 0 : 1;
+  camera.position.set(c.pos[0] + Math.sin(t*0.21)*0.08*sway, c.pos[1] + Math.sin(t*0.5)*0.02*sway, c.pos[2]);
+  look.set(c.look[0] + mouse.x*8*sway, c.look[1] - mouse.y*3*sway, c.look[2]);
+  camera.lookAt(look);
+  camera.fov = c.fov; camera.updateProjectionMatrix();
+  sky.position.copy(camera.position);
+}
+
+/* ------------------------------------------------------------------ resize */
+function resize(){
+  renderer.setPixelRatio(pr);
+  renderer.setSize(innerWidth, innerHeight);
+  composer.setPixelRatio(pr); composer.setSize(innerWidth, innerHeight);
+  camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+  finalPass.uniforms.uRes.value.set(innerWidth, innerHeight);
+}
+addEventListener('resize', resize); resize();
+
+/* ------------------------------------------------------------------ loop */
+const tmp = new THREE.Matrix4(), tq = new THREE.Quaternion(), te = new THREE.Euler(), tp = new THREE.Vector3(), ts = new THREE.Vector3(1,1,1);
+function update(t){
+  uniforms.uTime.value = t;
+  finalPass.uniforms.uTime.value = t;
+  updateCamera(t);
+  // 燈塔光芒閃爍
+  const pulse = 0.55 + 0.45*Math.max(0, Math.sin(t*1.4));
+  beam.material.opacity = pulse;
+  // 路燈暖光微顫
+  lampBulbs.forEach((s, i) => { s.material.opacity = 0.5 + 0.03*Math.sin(t*3+i); });
+  // 漁船起伏
+  boats.forEach(b => { b.position.y = Math.sin(t*0.8 + b.userData.ph)*0.25; b.rotation.z = Math.sin(t*0.6 + b.userData.ph)*0.03; });
+  // 海鳥
+  birdData.forEach((d, i) => {
+    const a = d.a + t*d.sp;
+    tp.set(d.cx + Math.cos(a)*d.r, d.y + Math.sin(a*2.0+i)*1.6, d.cz + Math.sin(a)*d.r*0.5);
+    te.set(0, -a + Math.PI, Math.sin(a*3)*0.25); tq.setFromEuler(te);
+    const sc = 0.9 + (i%3)*0.25; ts.set(sc,sc,sc);
+    tmp.compose(tp, tq, ts); birds.setMatrixAt(i, tmp);
+  });
+  birds.instanceMatrix.needsUpdate = true;
+}
+
+const stats = { fps: 0, frameMs: 0, pr, calls: 0, tris: 0, samples: [] };
+window.__stats = stats;
+let last = performance.now(), acc = 0, frames = 0, lowT = 0, highT = 0;
+const clock0 = performance.now();
+
+function frame(now){
+  const dt = (now - last)/1000; last = now;
+  const t = FIXED ? parseFloat(Q.get('t')) : (now - clock0)/1000;
+  const c0 = performance.now();
+  update(t);
+  renderer.info.reset();
+  composer.render();
+  stats.frameMs = performance.now() - c0;
+  // 統計 + 動態解析度
+  acc += dt; frames++;
+  if (acc >= 1){
+    stats.fps = frames/acc; stats.samples.push(stats.fps); acc = 0; frames = 0;
+    stats.calls = renderer.info.render.calls; stats.tris = renderer.info.render.triangles; stats.pr = pr;
+    if (!FIXED && !Q.has('pr')){
+      if (stats.fps < 52){ lowT++; highT = 0; } else if (stats.fps > 58){ highT++; lowT = 0; } else { lowT = highT = 0; }
+      if (lowT >= 1 && pr > 0.6){ pr = Math.max(0.6, pr - 0.15); resize(); lowT = 0; }
+      if (highT >= 4 && pr < basePR){ pr = Math.min(basePR, pr + 0.1); resize(); highT = 0; }
+    }
+    if (SHOW_FPS) document.getElementById('hud').textContent = `${stats.fps.toFixed(0)} fps · pr ${pr.toFixed(2)} · ${stats.calls} calls · ${(stats.tris/1000).toFixed(0)}k tris`;
+  }
+  if (FIXED){
+    frameCount++;
+    if (frameCount === 3) window.__ready = true;
+  }
+  requestAnimationFrame(frame);
+}
+let frameCount = 0;
+requestAnimationFrame(frame);
+// 效能基準：同步 finish 後量測平均每幀毫秒（供版本間相對比較；軟體渲染下絕對值無意義）
+window.__bench = (n = 8) => {
+  const gl = renderer.getContext(); const px = new Uint8Array(4);
+  const run = () => { update(5); renderer.info.reset(); composer.render(); gl.readPixels(0,0,1,1,gl.RGBA,gl.UNSIGNED_BYTE,px); };
+  run(); const t0 = performance.now(); for (let i = 0; i < n; i++) run();
+  return { ms: (performance.now()-t0)/n, calls: renderer.info.render.calls, tris: renderer.info.render.triangles };
+};
+</script>
+</body>
+</html>
