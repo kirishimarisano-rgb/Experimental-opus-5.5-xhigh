@@ -1,0 +1,19 @@
+{
+ "ms": 358.0833333333333,
+ "calls": 155,
+ "tris": 446557,
+ "motion": {
+  "cam1": {
+   "meanAbsDiff": 5.19,
+   "changedPct": 18
+  },
+  "cam2": {
+   "meanAbsDiff": 8.47,
+   "changedPct": 27.3
+  },
+  "cam3": {
+   "meanAbsDiff": 4.72,
+   "changedPct": 7.6
+  }
+ }
+}
