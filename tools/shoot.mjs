@@ -22,7 +22,7 @@ const errs = [];
 if (process.env.DBG) for (const cam of [3, 4]) {
   const page = await ctx.newPage();
   await page.goto(`http://localhost:${port}/?t=14&cam=${cam}&dbg=1`);
-  await page.waitForFunction('window.__ready === true', null, { timeout: 180000 });
+  await page.waitForFunction('window.__ready === true', null, { timeout: 180000 }); await page.waitForTimeout(4000);
   await page.screenshot({ path: path.join(out, `dbg${cam}.png`) }); await page.close();
 }
 for (const cam of [0, 1, 2]) {
@@ -30,7 +30,7 @@ for (const cam of [0, 1, 2]) {
   page.on('console', m => { if (['error', 'warning'].includes(m.type())) errs.push(`[cam${cam}] ${m.text()}`); });
   page.on('pageerror', e => errs.push(`[cam${cam}] ${e.message}`));
   await page.goto(`http://localhost:${port}/?t=14&cam=${cam}`);
-  await page.waitForFunction('window.__ready === true', null, { timeout: 180000 });
+  await page.waitForFunction('window.__ready === true', null, { timeout: 180000 }); await page.waitForTimeout(4000);
   await page.screenshot({ path: path.join(out, `cam${cam + 1}.png`) });
   await page.close();
 }
@@ -41,7 +41,7 @@ for (const cam of [0, 1, 2]) {
   for (const t of [14, 14.6]) {
     const page = await ctx.newPage();
     await page.goto(`http://localhost:${port}/?t=${t}&cam=${cam}`);
-    await page.waitForFunction('window.__ready === true', null, { timeout: 180000 });
+    await page.waitForFunction('window.__ready === true', null, { timeout: 180000 }); await page.waitForTimeout(4000);
     bufs.push(PNG.sync.read(await page.screenshot())); await page.close();
   }
   let sum = 0, ch = 0; const n = bufs[0].width * bufs[0].height;
