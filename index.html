@@ -503,7 +503,7 @@ const birdData = Array.from({length: birdCount}, (_, i) => ({ a: i*0.71, r: 30 +
   const bladeG = new THREE.BufferGeometry();
   const pos = [], uv = [], idx = [];
   for (let b = 0; b < 3; b++){
-    const a = b*Math.PI/3, c = Math.cos(a), s = Math.sin(a), w = 0.05, h = 0.55;
+    const a = b*Math.PI/3, c = Math.cos(a), s = Math.sin(a), w = 0.028, h = 0.42;
     const o = pos.length/3;
     pos.push(-w*c,0,-w*s,  w*c,0,w*s,  0.0*c,h,0.0*s);
     uv.push(0,0, 1,0, 0.5,1);
@@ -545,10 +545,10 @@ const birdData = Array.from({length: birdCount}, (_, i) => ({ a: i*0.71, r: 30 +
     const strip = r();
     let x = (r()-0.5)*160, z, y;
     if (strip < 0.55){ z = 5.35 + r()*1.0; y = TOP-0.3; }           // 步道與路之間
-    else if (strip < 0.8){ z = 0.55 + r()*0.2; y = TOP; }           // 矮牆根裂縫
+    else if (strip < 0.8){ z = 0.55 + r()*0.15; y = TOP; if (r() < 0.6) { i--; continue; } }           // 矮牆根裂縫
     else { z = 15 + r()*30; y = TOP-0.5; }                        // 遠處草地
     p.set(x, y, z); e.set(0, r()*6.28, 0); q.setFromEuler(e);
-    const sc = (strip>0.8 ? 1.6 : 0.8) + r()*1.1; s.set(sc, sc*(0.7+r()*0.9), sc);
+    const sc = (strip>0.8 ? 1.0 : 0.55) + r()*0.6; s.set(sc, sc*(0.7+r()*0.9), sc);
     m4.compose(p,q,s); im.setMatrixAt(i, m4);
   }
   im.frustumCulled = false; world.add(im);
@@ -596,9 +596,9 @@ composer.addPass(finalPass);
 
 /* ------------------------------------------------------------------ cameras */
 const CAMS = [
-  { pos: [-9, 4.25, 3.6],  look: [14, 3.4, -60],  fov: 52 },   // A 沿堤望向落日
-  { pos: [5.5, 4.0, 1.4],  look: [-1, 1.2, -9],   fov: 58 },   // B 探出矮牆俯視消波塊與浪
-  { pos: [2, 3.7, 3.2],    look: [-12, 5.4, 36],  fov: 54 },   // C 回望陸側，路燈與東方暮空
+  { pos: [-9, 4.3, 3.4],   look: [-20, 4.0, -56], fov: 52 },   // A 落日在右三分線，欄杆與矮牆引導視線
+  { pos: [4.5, 4.75, 1.0], look: [-2.5, 0.2, -10],  fov: 56 },   // B 探出矮牆俯視消波塊與浪
+  { pos: [-26, 4.0, 2.4],  look: [30, 4.3, -3.5],  fov: 58 },   // C 沿堤望去，路燈與欄杆透視
 ];
 const look = new THREE.Vector3(), mouse = new THREE.Vector2();
 addEventListener('mousemove', e => { mouse.set(e.clientX/innerWidth-0.5, e.clientY/innerHeight-0.5); });
