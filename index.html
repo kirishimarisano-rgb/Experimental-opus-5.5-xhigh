@@ -40,8 +40,8 @@ let basePR = Math.min(window.devicePixelRatio, 1.5);
 let pr = Q.has('pr') ? parseFloat(Q.get('pr')) : basePR;
 renderer.setPixelRatio(pr);
 renderer.setSize(innerWidth, innerHeight);
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 0.95;
+renderer.toneMapping = THREE.AgXToneMapping;
+renderer.toneMappingExposure = 1.0;
 renderer.shadowMap.enabled = true;
 renderer.info.autoReset = false;
 renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -82,8 +82,8 @@ vec3 skyGradient(vec3 d){
   // 太陽側暖暈、背陽側冷暗
   float az = 0.5 + 0.5*dot(normalize(d.xz+1e-4), normalize(uSunDir.xz));
   col *= mix(0.55, 1.0, az);
-  col += vec3(1.5,0.55,0.18) * pow(sd,4.0) * exp(-e*5.0);
-  col += vec3(2.4,0.95,0.32) * pow(sd,48.0);
+  col += vec3(1.1,0.42,0.14) * pow(sd,5.0) * exp(-e*6.0);
+  col += vec3(1.8,0.7,0.24) * pow(sd,90.0);
   return col;
 }
 float sunDisc(vec3 d){
@@ -129,7 +129,7 @@ const skyMat = new THREE.ShaderMaterial({
     vec3 d = normalize(vDir);
     vec3 col = skyColor(d, 1.0);
     float s = sunDisc(d);
-    col += vec3(60.0,30.0,10.0)*s;
+    col += vec3(28.0,13.0,4.5)*s;
     gl_FragColor = vec4(col,1.0);
   }`
 });
@@ -161,6 +161,9 @@ sun.shadow.mapSize.set(4096, 4096);
 Object.assign(sun.shadow.camera, { left: -34, right: 34, top: 34, bottom: -34, near: 10, far: 260 });
 sun.shadow.bias = -0.0002; sun.shadow.normalBias = 0.03;
 scene.add(sun, sun.target);
+// 補光：天空紫藍從上方、地面暖橘反彈，讓背光面不至於死黑
+const fill = new THREE.HemisphereLight(0x8f7cc0, 0xa8683c, 0.9);
+scene.add(fill);
 
 /* ------------------------------------------------------------------ procedural textures */
 function rng(seed){ let s = seed >>> 0; return () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296; }
@@ -460,7 +463,7 @@ const waterMat = new THREE.ShaderMaterial({
     vec3 sky = skyColor(R, 0.85);
     // 太陽反射閃光（依距離增強）
     float sg = max(dot(R, uSunDir), 0.0);
-    vec3 glitter = vec3(2.4,1.0,0.36) * (pow(sg, 1500.0)*40.0 + pow(sg, 260.0)*4.0 + pow(sg, 30.0)*0.9);
+    vec3 glitter = vec3(2.4,0.95,0.32) * (pow(sg, 1500.0)*40.0 + pow(sg, 300.0)*3.0 + pow(sg, 40.0)*0.35);
     // 水體本色：深處近黑藍，波峰透光偏青綠
     float crest = clamp(0.5 + dot(g, vec2(0.5)) * 2.0, 0.0, 1.0);
     vec3 deep = mix(vec3(0.008,0.028,0.045), vec3(0.03,0.12,0.11), crest*0.6);
@@ -648,7 +651,7 @@ const birdData = Array.from({length: birdCount}, (_, i) => ({ a: i*0.71, r: 30 +
 /* ------------------------------------------------------------------ post */
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
-const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth/2, innerHeight/2), 0.55, 0.75, 1.15);
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth/2, innerHeight/2), 0.5, 0.6, 2.2);
 composer.addPass(bloom);
 composer.addPass(new OutputPass());
 const finalPass = new ShaderPass({
