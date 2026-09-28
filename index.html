@@ -389,6 +389,37 @@ box(300, 0.4, 80, grassGround, 0, TOP-0.7, 55);
     m4.compose(p,q,s); im.setMatrixAt(k++, m4);
   }});
   im.castShadow = true; im.receiveShadow = true; world.add(im);
+
+  // 釣客的座位：一顆朝天豎起的消波塊，上面坐著剪影（落日逆光）
+  const seat = new THREE.Mesh(tg, tMat);
+  seat.quaternion.setFromUnitVectors(dirs[0], new THREE.Vector3(0,1,0)); seat.scale.setScalar(1.3);
+  seat.position.set(-12.6, 0.35, -3.4); seat.castShadow = seat.receiveShadow = true; world.add(seat);
+  const F = new THREE.Group(); F.position.set(-12.6, 2.12, -3.4); F.rotation.y = 0.12; world.add(F);
+  const cloth = new THREE.MeshStandardMaterial({ color: 0x232a36, roughness: 0.92 });
+  const pants = new THREE.MeshStandardMaterial({ color: 0x1b1c22, roughness: 0.95 });
+  const skin  = new THREE.MeshStandardMaterial({ color: 0x6d4b3a, roughness: 0.7 });
+  const straw = new THREE.MeshStandardMaterial({ color: 0xa08a58, roughness: 0.85, side: THREE.DoubleSide });
+  const dark  = new THREE.MeshStandardMaterial({ color: 0x0e0e10, roughness: 0.5 });
+  const add = (geo, mat, x, y, z, rx = 0, ry = 0, rz = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x,y,z); m.rotation.set(rx,ry,rz); m.castShadow = true; F.add(m); return m; };
+  add(new THREE.CapsuleGeometry(0.17, 0.36, 4, 10), cloth, 0, 0.52, 0, -0.12);
+  add(new THREE.SphereGeometry(0.115, 14, 10), skin, 0, 0.98, -0.03);
+  add(new THREE.CylinderGeometry(0.27, 0.27, 0.015, 20), straw, 0, 1.05, -0.03);
+  add(new THREE.CylinderGeometry(0.12, 0.14, 0.10, 16), straw, 0, 1.10, -0.03);
+  for (const sx of [-1, 1]){
+    add(new THREE.CapsuleGeometry(0.075, 0.38, 4, 8), pants, sx*0.11, 0.14, -0.2, Math.PI/2);
+    add(new THREE.CapsuleGeometry(0.06, 0.36, 4, 8), pants, sx*0.11, -0.1, -0.44, 0.15);
+    add(new THREE.CapsuleGeometry(0.05, 0.3, 4, 8), cloth, sx*0.16, 0.66, -0.2, -1.05, 0, sx*0.15);
+  }
+  // 釣竿與釣線
+  const rodDir = new THREE.Vector3(0.12, 0.5, -1).normalize();
+  const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.013, 3.6, 6), dark);
+  rod.position.set(0.02, 0.6, -0.42).addScaledVector(rodDir, 1.7);
+  rod.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), rodDir); rod.castShadow = true; F.add(rod);
+  const tip = new THREE.Vector3(0.02, 0.6, -0.42).addScaledVector(rodDir, 3.5);
+  const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([tip, new THREE.Vector3(tip.x+0.5, -2.1, tip.z-1.4)]),
+    new THREE.LineBasicMaterial({ color: 0xffd9a8, transparent: true, opacity: 0.55 }));
+  F.add(line);
+  add(new THREE.CylinderGeometry(0.16, 0.13, 0.3, 14), new THREE.MeshStandardMaterial({ color: 0x2f6b8a, roughness: 0.6 }), 0.62, 0.15, 0.05);
 }
 
 /* 路燈 */
@@ -528,7 +559,11 @@ const lighthouse = new THREE.Group(); scene.add(lighthouse);
 let beam, beamShaft, beamPivot, spray;
 {
   const dark = new THREE.MeshStandardMaterial({ color: 0x3b3a3e, roughness: 0.9 });
-  const mole = new THREE.Mesh(new THREE.BoxGeometry(6, 2.2, 150), dark); mole.position.set(-58, 0.3, -105);
+  const mt = cp.map.clone(), mb = cp.bump.clone(), ms = cp.map.clone(), msb = cp.bump.clone();
+  mt.repeat.set(3, 60); mb.repeat.set(3, 60); ms.repeat.set(60, 1); msb.repeat.set(60, 1); mt.needsUpdate = mb.needsUpdate = ms.needsUpdate = msb.needsUpdate = true;
+  const topM = makeWet(new THREE.MeshStandardMaterial({ map: mt, bumpMap: mb, bumpScale: 2, roughness: 0.9, color: 0xc9c2b8 }));
+  const sideM = makeWet(new THREE.MeshStandardMaterial({ map: ms, bumpMap: msb, bumpScale: 2, roughness: 0.9, color: 0xc9c2b8 }));
+  const mole = new THREE.Mesh(new THREE.BoxGeometry(8, 2.2, 178), [sideM, sideM, topM, sideM, sideM, sideM]); mole.position.set(-58, 0.3, -89); mole.receiveShadow = true;
   mole.castShadow = true; scene.add(mole);
   const white = new THREE.MeshStandardMaterial({ color: 0xe8e0d8, roughness: 0.7 });
   const red = new THREE.MeshStandardMaterial({ color: 0xa8302a, roughness: 0.7 });
@@ -729,7 +764,7 @@ composer.addPass(finalPass);
 
 /* ------------------------------------------------------------------ cameras */
 const CAMS = [
-  { pos: [-9, 4.3, 3.4],   look: [-20, 4.0, -56], fov: 52 },   // A 落日在右三分線，欄杆與矮牆引導視線
+  { pos: [-9, 4.55, 3.4],  look: [-20, 1.35, -56], fov: 52 },   // A 落日在右三分線，欄杆與矮牆引導視線
   { pos: [4.5, 4.75, 1.0], look: [-2.5, 0.2, -10],  fov: 56 },   // B 探出矮牆俯視消波塊與浪
   { pos: [-26, 4.0, 2.4],  look: [30, 4.3, -3.5],  fov: 58 },   // C 沿堤望去，路燈與欄杆透視
   { pos: [1.5, 3.5, 1.6],  look: [-2.5, 0.6, -4.5], fov: 55 },   // (除錯) 材質特寫：牆面與消波塊
