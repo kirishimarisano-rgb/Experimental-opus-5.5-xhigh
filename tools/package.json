@@ -1,1 +1,1 @@
-{ "name":"seawall-tools","private":true,"type":"module","dependencies":{"three":"0.186.1","playwright":"1.56.1"} }
+{"name":"seawall-tools","private":true,"type":"module","dependencies":{"playwright":"1.56.1","pngjs":"^7.0.0","three":"0.186.1"}}
