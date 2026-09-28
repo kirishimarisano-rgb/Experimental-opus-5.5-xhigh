@@ -355,7 +355,7 @@ box(200, 0.5, 5.4, pathMat, 0, TOP-0.25, 2.7);
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(200/0.3, 1); t.anisotropy = 8;
   const tb = new THREE.CanvasTexture(c); tb.wrapS = tb.wrapT = THREE.RepeatWrapping; tb.repeat.copy(t.repeat); tb.anisotropy = 8;
   const strip = new THREE.Mesh(new THREE.BoxGeometry(200, 0.02, 0.3), new THREE.MeshStandardMaterial({ map: t, bumpMap: tb, bumpScale: 3, roughness: 0.7 }));
-  strip.position.set(0, TOP+0.01, 2.1); strip.receiveShadow = true; world.add(strip);
+  strip.position.set(0, TOP+0.01, 3.1); strip.receiveShadow = true; world.add(strip);
 }
 // 雨後積水：鏡面反射暮色天空
 {
@@ -559,13 +559,28 @@ let cyclist, cycWheels = [], cycLegs = [];
 {
   const wood = new THREE.MeshStandardMaterial({ map: woodTexture(), roughness: 0.72 });
   const iron = new THREE.MeshStandardMaterial({ color: 0x25272a, roughness: 0.5, metalness: 0.7 });
-  [[-14,2.0],[9,2.0],[26,2.0]].forEach(([x,z]) => {
+  [[-14,1.6],[9,1.6],[26,1.6]].forEach(([x,z]) => {
     const b = new THREE.Group();
     const seat = new THREE.Mesh(new THREE.BoxGeometry(1.8,0.06,0.45), wood); seat.position.y = 0.45;
     const back = new THREE.Mesh(new THREE.BoxGeometry(1.8,0.4,0.05), wood); back.position.set(0,0.75,0.2); back.rotation.x = -0.12;
     const l1 = new THREE.Mesh(new THREE.BoxGeometry(0.06,0.45,0.4), iron); l1.position.set(-0.8,0.22,0);
     const l2 = l1.clone(); l2.position.x = 0.8;
-    b.add(seat, back, l1, l2); b.position.set(x, TOP, z); b.traverse(o => { o.castShadow = true; o.receiveShadow = true; }); world.add(b);
+    b.add(seat, back, l1, l2);
+    if (x === -14){   // 一對情侶坐在長椅上看夕陽
+      const cloth1 = new THREE.MeshStandardMaterial({ color: 0x3a2f4a, roughness: 0.9 }), cloth2 = new THREE.MeshStandardMaterial({ color: 0x8a5a3a, roughness: 0.9 });
+      const pants = new THREE.MeshStandardMaterial({ color: 0x1c1f2a, roughness: 0.9 }), skin = new THREE.MeshStandardMaterial({ color: 0x74513f, roughness: 0.7 }), hair = new THREE.MeshStandardMaterial({ color: 0x110c0a, roughness: 0.6 });
+      const put = (geo, mat, px, py, pz, rx = 0, ry = 0, rz = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(px,py,pz); m.rotation.set(rx,ry,rz); m.castShadow = true; b.add(m); return m; };
+      [[-0.32, cloth1, 0.04, false], [0.32, cloth2, -0.05, true]].forEach(([px, cl, lean, longHair]) => {
+        put(new THREE.CapsuleGeometry(0.15, 0.30, 4, 10), cl, px, 0.75, 0.08, 0, 0, lean*2);
+        put(new THREE.SphereGeometry(0.105, 12, 10), skin, px + lean*1.6, 1.13, 0.04);
+        put(new THREE.SphereGeometry(0.115, 12, 10, 0, 6.3, 0, 1.9), hair, px + lean*1.6, 1.15, 0.06);
+        if (longHair) put(new THREE.CapsuleGeometry(0.09, 0.22, 4, 8), hair, px + lean*1.6, 1.0, 0.13);
+        put(new THREE.CapsuleGeometry(0.07, 0.32, 4, 8), pants, px, 0.5, -0.12, Math.PI/2);
+        put(new THREE.CapsuleGeometry(0.055, 0.34, 4, 8), pants, px, 0.28, -0.3);
+      });
+      put(new THREE.CapsuleGeometry(0.045, 0.3, 4, 8), cloth1, -0.12, 0.72, -0.02, -0.5, 0, -0.5);   // 手臂搭著彼此
+    }
+    b.position.set(x, TOP, z); b.traverse(o => { o.castShadow = true; o.receiveShadow = true; }); world.add(b);
   });
 }
 
@@ -947,7 +962,7 @@ composer.addPass(finalPass);
 const CAMS = [
   { pos: [-9, 4.55, 3.4],  look: [-20, 1.35, -56], fov: 52 },   // A 落日在右三分線，欄杆與矮牆引導視線
   { pos: [4.5, 4.75, 1.0], look: [-2.5, 0.2, -10],  fov: 56 },   // B 探出矮牆俯視消波塊與浪
-  { pos: [-26, 4.0, 2.4],  look: [30, 4.3, -3.5],  fov: 58 },   // C 沿堤望去，路燈與欄杆透視
+  { pos: [-27, 3.95, 4.2], look: [30, 4.4, -1.2],  fov: 58 },   // C 沿堤望去，路燈與欄杆透視
   { pos: [1.5, 3.5, 1.6],  look: [-2.5, 0.6, -4.5], fov: 55 },   // (除錯) 材質特寫：牆面與消波塊
   { pos: [-3, 3.5, 4.2],   look: [4, 2.6, 0.8],     fov: 55 },   // (除錯) 材質特寫：步道、矮牆、草
 ];
