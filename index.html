@@ -159,12 +159,12 @@ scene.add(sky);
   envScene.add(envSky);
   const pm = new THREE.PMREMGenerator(renderer);
   scene.environment = pm.fromScene(envScene, 0.02).texture;
-  scene.environmentIntensity = 0.85;
+  scene.environmentIntensity = 0.7;
   pm.dispose();
 }
 
 /* ------------------------------------------------------------------ lights */
-const sun = new THREE.DirectionalLight(0xff9a4a, 3.4);
+const sun = new THREE.DirectionalLight(0xff9440, 5.2);
 sun.position.copy(SUN_DIR).multiplyScalar(120).add(new THREE.Vector3(0, 0, 8));
 sun.target.position.set(0, 2, 8);
 sun.castShadow = true;
@@ -173,7 +173,7 @@ Object.assign(sun.shadow.camera, { left: -34, right: 34, top: 34, bottom: -34, n
 sun.shadow.bias = -0.0002; sun.shadow.normalBias = 0.03;
 scene.add(sun, sun.target);
 // 補光：天空紫藍從上方、地面暖橘反彈，讓背光面不至於死黑
-const fill = new THREE.HemisphereLight(0x8f7cc0, 0xa8683c, 0.9);
+const fill = new THREE.HemisphereLight(0x8072b8, 0x9a6038, 0.62);
 scene.add(fill);
 
 /* ------------------------------------------------------------------ procedural textures */
@@ -592,7 +592,7 @@ const waterMat = new THREE.ShaderMaterial({
     vec3 sky = skyColor(R, 0.85);
     // 太陽反射閃光（依距離增強）
     float sg = max(dot(Rg, uSunDir), 0.0);
-    vec3 glitter = vec3(2.4,0.95,0.32) * (pow(sg, 1500.0)*40.0 + pow(sg, 300.0)*3.0 + pow(sg, 40.0)*0.35);
+    vec3 glitter = vec3(2.4,0.95,0.32) * (pow(sg, 1500.0)*22.0 + pow(sg, 300.0)*2.2 + pow(sg, 40.0)*0.16);
     // 水體本色：深處近黑藍，波峰透光偏青綠
     float crest = clamp(0.5 + dot(g, vec2(0.5)) * 2.0, 0.0, 1.0);
     vec3 deep = mix(vec3(0.008,0.028,0.045), vec3(0.03,0.12,0.11), crest*0.6);
@@ -882,7 +882,7 @@ const birdData = Array.from({length: birdCount}, (_, i) => i < 6
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
 // （試過 god-rays 徑向模糊後製：會把右下整片洗成霧、亮點被拖出方塊殘影，評估後移除）
-const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth/2, innerHeight/2), 0.5, 0.6, 2.2);
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth/2, innerHeight/2), 0.32, 0.5, 2.4);
 composer.addPass(bloom);
 composer.addPass(new OutputPass());
 const finalPass = new ShaderPass({
