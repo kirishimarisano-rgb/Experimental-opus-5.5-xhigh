@@ -165,47 +165,89 @@ scene.add(sun, sun.target);
 /* ------------------------------------------------------------------ procedural textures */
 function rng(seed){ let s = seed >>> 0; return () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296; }
 
-function concreteTextures(seed, { w = 1024, h = 1024, jointsX = 4, jointsY = 0, stain = 1 } = {}){
+function concreteTextures(seed, { w = 1024, h = 1024, cols = 0, rows = 0, ties = false, stain = 1, cracks = 3, base = [143,138,130], pores = 500, speck = 3000 } = {}){
   const r = rng(seed);
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   const g = c.getContext('2d');
-  g.fillStyle = '#8f8a82'; g.fillRect(0, 0, w, h);
-  // 大塊色斑
-  for (let i = 0; i < 90; i++){
-    const x = r()*w, y = r()*h, rad = 40 + r()*180, v = 130 + r()*30 | 0;
+  g.fillStyle = `rgb(${base})`; g.fillRect(0, 0, w, h);
+  // 大塊色斑（模板灌漿的濃淡差）
+  for (let i = 0; i < 140; i++){
+    const x = r()*w, y = r()*h, rad = 30 + r()*(w*0.22), v = r() < 0.5 ? 255 : 0, a = 0.05 + r()*0.07;
     const gr = g.createRadialGradient(x,y,0,x,y,rad);
-    gr.addColorStop(0, `rgba(${v},${v-3},${v-8},0.18)`); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    gr.addColorStop(0, `rgba(${v},${v},${v},${a})`); gr.addColorStop(1, 'rgba(0,0,0,0)');
     g.fillStyle = gr; g.fillRect(x-rad, y-rad, rad*2, rad*2);
   }
-  // 細顆粒
-  const img = g.getImageData(0,0,w,h), d = img.data;
-  for (let i = 0; i < d.length; i += 4){
-    const n = (r()-0.5)*38;
-    d[i]+=n; d[i+1]+=n; d[i+2]+=n*0.95;
+  // 骨材顆粒（亮暗混雜）
+  for (let i = 0; i < speck; i++){
+    const v = r() < 0.5 ? 200 + r()*40 : 60 + r()*40;
+    g.fillStyle = `rgba(${v},${v-4},${v-10},${0.18+r()*0.3})`;
+    const sz = 0.6 + r()*1.7; g.fillRect(r()*w, r()*h, sz, sz);
   }
-  g.putImageData(img,0,0);
   // 氣孔
-  for (let i = 0; i < 260; i++){
-    g.fillStyle = `rgba(40,36,32,${0.25+r()*0.35})`;
-    g.beginPath(); g.arc(r()*w, r()*h, 0.6+r()*1.8, 0, 7); g.fill();
+  for (let i = 0; i < pores; i++){
+    const x = r()*w, y = r()*h, rr = 0.7 + r()*2.6;
+    g.fillStyle = `rgba(30,27,24,${0.4+r()*0.4})`; g.beginPath(); g.ellipse(x, y, rr, rr*(0.7+r()*0.5), r()*3, 0, 7); g.fill();
+    g.fillStyle = 'rgba(210,205,195,0.25)'; g.beginPath(); g.arc(x+rr*0.5, y+rr*0.6, rr*0.55, 0, 7); g.fill();
   }
-  // 雨痕
-  for (let i = 0; i < 26*stain; i++){
-    const x = r()*w, y = r()*h*0.6, len = 80 + r()*260, wd = 2 + r()*9;
+  // 雨痕與析出白華
+  for (let i = 0; i < 34*stain; i++){
+    const x = r()*w, y = r()*h*0.7, len = h*(0.1 + r()*0.4), wd = 2 + r()*12;
     const gr = g.createLinearGradient(0,y,0,y+len);
-    gr.addColorStop(0,'rgba(60,54,46,0)'); gr.addColorStop(0.15,'rgba(60,54,46,0.22)'); gr.addColorStop(1,'rgba(60,54,46,0)');
+    const tint = r() < 0.7 ? '52,46,38' : '215,210,200';
+    gr.addColorStop(0,`rgba(${tint},0)`); gr.addColorStop(0.12,`rgba(${tint},0.24)`); gr.addColorStop(1,`rgba(${tint},0)`);
     g.fillStyle = gr; g.fillRect(x, y, wd, len);
   }
-  // 接縫
-  g.strokeStyle = 'rgba(35,32,30,0.85)'; g.lineWidth = 3;
-  for (let i = 0; i < jointsX; i++){ const x = (i)*w/jointsX + 1.5; g.beginPath(); g.moveTo(x,0); g.lineTo(x,h); g.stroke(); }
-  for (let i = 0; i < jointsY; i++){ const y = (i)*h/jointsY + 1.5; g.beginPath(); g.moveTo(0,y); g.lineTo(w,y); g.stroke(); }
+  // 裂縫（隨機折線 + 細分岔）
+  g.lineCap = 'round';
+  for (let i = 0; i < cracks; i++){
+    let x = r()*w, y = r()*h; const dir = r()*6.28; g.strokeStyle = 'rgba(28,25,22,0.85)'; g.lineWidth = 1.2;
+    g.beginPath(); g.moveTo(x,y);
+    for (let k = 0; k < 24; k++){ x += Math.cos(dir + (r()-0.5)*1.4)*(6+r()*10); y += Math.sin(dir + (r()-0.5)*1.4)*(6+r()*10); g.lineTo(x,y); }
+    g.stroke();
+  }
+  // 模板接縫與繫桿孔
+  if (cols || rows){
+    g.strokeStyle = 'rgba(34,31,28,0.9)'; g.lineWidth = 3;
+    for (let i = 0; i < cols; i++){ const x = i*w/cols + 1.5; g.beginPath(); g.moveTo(x,0); g.lineTo(x,h); g.stroke(); g.strokeStyle='rgba(235,230,220,0.18)'; g.lineWidth=2; g.beginPath(); g.moveTo(x+3,0); g.lineTo(x+3,h); g.stroke(); g.strokeStyle='rgba(34,31,28,0.9)'; g.lineWidth=3; }
+    for (let i = 0; i < rows; i++){ const y = i*h/rows + 1.5; g.beginPath(); g.moveTo(0,y); g.lineTo(w,y); g.stroke(); }
+  }
+  if (ties){
+    const cx = Math.max(cols,1), cy = Math.max(rows,1);
+    for (let i = 0; i < cx*2; i++) for (let j = 0; j < cy*2; j++){
+      const x = (i+0.5)*w/(cx*2), y = (j+0.5)*h/(cy*2);
+      g.fillStyle = 'rgba(25,22,20,0.85)'; g.beginPath(); g.arc(x,y,7,0,7); g.fill();
+      g.strokeStyle = 'rgba(200,196,188,0.4)'; g.lineWidth = 2; g.beginPath(); g.arc(x,y,9,0.2,2.6); g.stroke();
+      const gr = g.createLinearGradient(0,y,0,y+140); gr.addColorStop(0,'rgba(70,52,36,0.35)'); gr.addColorStop(1,'rgba(70,52,36,0)');
+      g.fillStyle = gr; g.fillRect(x-4,y,8,140);   // 鏽水痕
+    }
+  }
   const map = new THREE.CanvasTexture(c);
-  map.colorSpace = THREE.SRGBColorSpace; map.wrapS = map.wrapT = THREE.RepeatWrapping;
-  map.anisotropy = 8;
+  map.colorSpace = THREE.SRGBColorSpace; map.wrapS = map.wrapT = THREE.RepeatWrapping; map.anisotropy = 8;
   const bump = new THREE.CanvasTexture(c);
   bump.wrapS = bump.wrapT = THREE.RepeatWrapping; bump.anisotropy = 8;
   return { map, bump };
+}
+
+/* 柏油：顆粒 + 補丁 + 白線 */
+function asphaltTextures(){
+  const r = rng(3), w = 1024, h = 1024, c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d'); g.fillStyle = '#4a4848'; g.fillRect(0,0,w,h);
+  for (let i = 0; i < 26000; i++){ const v = 40 + r()*110|0; g.fillStyle = `rgba(${v},${v},${v+2},${0.25+r()*0.4})`; const s = 0.8 + r()*2.2; g.fillRect(r()*w, r()*h, s, s); }
+  for (let i = 0; i < 6; i++){ const x = r()*w, y = r()*h; g.fillStyle = 'rgba(20,20,22,0.25)'; g.fillRect(x, y, 80+r()*200, 40+r()*120); }
+  g.strokeStyle = 'rgba(25,25,26,0.8)'; g.lineWidth = 2;
+  for (let i = 0; i < 4; i++){ let x = r()*w, y = r()*h; g.beginPath(); g.moveTo(x,y); for (let k = 0; k < 18; k++){ x += (r()-0.3)*24; y += (r()-0.5)*14; g.lineTo(x,y);} g.stroke(); }
+  const map = new THREE.CanvasTexture(c); map.colorSpace = THREE.SRGBColorSpace; map.wrapS = map.wrapT = THREE.RepeatWrapping; map.anisotropy = 8;
+  const bump = new THREE.CanvasTexture(c); bump.wrapS = bump.wrapT = THREE.RepeatWrapping; bump.anisotropy = 8;
+  return { map, bump };
+}
+
+/* 木紋 */
+function woodTexture(){
+  const r = rng(8), w = 512, h = 128, c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d'); g.fillStyle = '#7a5538'; g.fillRect(0,0,w,h);
+  for (let i = 0; i < 90; i++){ const y = r()*h, v = 40 + r()*60|0; g.strokeStyle = `rgba(${v},${v*0.6|0},${v*0.35|0},${0.25+r()*0.3})`; g.lineWidth = 0.6 + r()*1.6;
+    g.beginPath(); g.moveTo(0,y); for (let x = 0; x <= w; x += 32) g.lineTo(x, y + Math.sin(x*0.02+i)*2 + (r()-0.5)*1.2); g.stroke(); }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
 }
 
 function radialTexture(stops){
@@ -216,22 +258,40 @@ function radialTexture(stops){
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
 }
 
-/* 濕度：低於浪線的部分變暗、帶藻綠 */
-function makeWet(mat, { wetTop = 1.2, dryBelow = 0.2 } = {}){
+/* 濕度：浪線以下變暗、藻類、藤壺，並讓潮濕處變光滑 */
+function makeWet(mat, { wetTop = 1.2, dryBelow = 0.2, barnacle = 1.0 } = {}){
   mat.onBeforeCompile = (sh) => {
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying float vWY;')
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWP;')
       .replace('#include <project_vertex>', `#include <project_vertex>
         vec4 wpp = vec4(transformed,1.0);
         #ifdef USE_INSTANCING
           wpp = instanceMatrix * wpp;
         #endif
-        vWY = (modelMatrix*wpp).y;`);
+        vWP = (modelMatrix*wpp).xyz;`);
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', `#include <common>\nvarying float vWY;`)
+      .replace('#include <common>', `#include <common>
+        varying vec3 vWP;
+        float wh(vec3 p){ p = fract(p*0.3183099+vec3(.1,.2,.3)); p += dot(p,p.yzx+19.19); return fract((p.x+p.y)*p.z); }
+        float wn(vec3 x){ vec3 i=floor(x), f=fract(x); f=f*f*(3.0-2.0*f);
+          return mix(mix(mix(wh(i),wh(i+vec3(1,0,0)),f.x), mix(wh(i+vec3(0,1,0)),wh(i+vec3(1,1,0)),f.x), f.y),
+                     mix(mix(wh(i+vec3(0,0,1)),wh(i+vec3(1,0,1)),f.x), mix(wh(i+vec3(0,1,1)),wh(i+vec3(1,1,1)),f.x), f.y), f.z); }
+        float gWet;`)
       .replace('#include <map_fragment>', `#include <map_fragment>
-        float wet = 1.0 - smoothstep(${dryBelow.toFixed(2)}, ${wetTop.toFixed(2)}, vWY);
-        diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb*vec3(0.30,0.36,0.30), wet);`);
+        float nz = wn(vWP*3.1)*0.6 + wn(vWP*9.0)*0.4;
+        float wetY = vWP.y + (nz-0.5)*0.55;
+        gWet = 1.0 - smoothstep(${dryBelow.toFixed(2)}, ${wetTop.toFixed(2)}, wetY);
+        vec3 wetCol = diffuseColor.rgb*vec3(0.32,0.36,0.32);
+        // 藻類：浪線附近的綠褐色鬍鬚
+        float algae = smoothstep(0.35,0.75,wn(vWP*vec3(6.0,14.0,6.0))) * (1.0 - smoothstep(-0.2,0.9,wetY)) * smoothstep(-1.4,0.0,wetY);
+        wetCol = mix(wetCol, vec3(0.11,0.16,0.05), algae*0.85);
+        diffuseColor.rgb = mix(diffuseColor.rgb, wetCol, gWet);
+        // 藤壺 / 牡蠣殼：白灰小圓斑
+        float bn = wn(vWP*vec3(28.0,28.0,28.0));
+        float barn = smoothstep(0.74, 0.80, bn) * (1.0 - smoothstep(0.1, 0.75, wetY)) * ${barnacle.toFixed(2)};
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.62,0.6,0.55)*(0.6+0.6*wn(vWP*60.0)), barn);`)
+      .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+        roughnessFactor = mix(roughnessFactor, 0.22, gWet*0.85);`);
   };
   return mat;
 }
@@ -240,18 +300,21 @@ function makeWet(mat, { wetTop = 1.2, dryBelow = 0.2 } = {}){
 const world = new THREE.Group(); scene.add(world);
 const TOP = 2.6;                                   // 步道高度
 
-const cw = concreteTextures(11, { jointsX: 2, jointsY: 0 });
-cw.map.repeat.set(24, 1); cw.bump.repeat.set(24, 1);
-const wallMat = makeWet(new THREE.MeshStandardMaterial({ map: cw.map, bumpMap: cw.bump, bumpScale: 2.2, roughness: 0.92, metalness: 0 }));
+const cw = concreteTextures(11, { w: 1024, h: 1536, cols: 1, rows: 3, ties: true, cracks: 4 });
+cw.map.repeat.set(50, 1); cw.bump.repeat.set(50, 1);
+const wallMat = makeWet(new THREE.MeshStandardMaterial({ map: cw.map, bumpMap: cw.bump, bumpScale: 3.0, roughness: 0.9, metalness: 0 }));
 
-const cp = concreteTextures(23, { jointsX: 1, jointsY: 1, stain: 0.3 });
-cp.map.repeat.set(40, 2); cp.bump.repeat.set(40, 2);
-const pathMat = new THREE.MeshStandardMaterial({ map: cp.map, bumpMap: cp.bump, bumpScale: 1.5, roughness: 0.9, color: 0xd8d2ca });
+const cp = concreteTextures(23, { cols: 1, rows: 1, stain: 0.3, cracks: 5, pores: 900, speck: 9000, base: [150,145,138] });
+cp.map.repeat.set(66, 2); cp.bump.repeat.set(66, 2);
+const pathMat = new THREE.MeshStandardMaterial({ map: cp.map, bumpMap: cp.bump, bumpScale: 2.2, roughness: 0.88, color: 0xe4ded6 });
 
 function box(w,h,d,mat,x,y,z,{cast=true,recv=true}={}){
   const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mat);
   m.position.set(x,y,z); m.castShadow = cast; m.receiveShadow = recv; world.add(m); return m;
 }
+const pm = cw.map.clone(), pb = cw.bump.clone();
+pm.repeat.set(50, 0.09); pm.offset.y = 0.45; pb.repeat.set(50, 0.09); pb.offset.y = 0.45; pm.needsUpdate = pb.needsUpdate = true;
+const parapetMat = makeWet(new THREE.MeshStandardMaterial({ map: pm, bumpMap: pb, bumpScale: 3.0, roughness: 0.9 }));
 // 海側垂直牆面（延伸到水下）
 box(200, 6, 1.2, wallMat, 0, TOP-3, -0.6);
 // 基腳平台
@@ -259,9 +322,10 @@ box(200, 0.9, 1.6, wallMat, 0, 0.1, -1.4);
 // 步道
 box(200, 0.5, 5.4, pathMat, 0, TOP-0.25, 2.7);
 // 防浪矮牆
-box(200, 0.55, 0.45, wallMat, 0, TOP+0.275, 0.25);
+box(200, 0.55, 0.45, parapetMat, 0, TOP+0.275, 0.25);
 // 陸側路面
-const asphalt = new THREE.MeshStandardMaterial({ color: 0x3a3838, roughness: 0.95 });
+const at = asphaltTextures(); at.map.repeat.set(50, 2.25); at.bump.repeat.set(50, 2.25);
+const asphalt = new THREE.MeshStandardMaterial({ map: at.map, bumpMap: at.bump, bumpScale: 1.2, roughness: 0.92 });
 box(200, 0.4, 9, asphalt, 0, TOP-0.5, 10.4);
 // 遠處地面
 const grassGround = new THREE.MeshStandardMaterial({ color: 0x4a5230, roughness: 1 });
@@ -269,12 +333,15 @@ box(300, 0.4, 80, grassGround, 0, TOP-0.7, 55);
 
 // 欄杆
 {
-  const metal = new THREE.MeshStandardMaterial({ color: 0x8a8f96, roughness: 0.45, metalness: 0.7 });
+  const metal = new THREE.MeshStandardMaterial({ color: 0xa9aeb4, roughness: 0.38, metalness: 0.85 });
   const N = 100, span = 2.0;
   const post = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.035,0.04,1.05,8), metal, N);
   const m4 = new THREE.Matrix4();
   for (let i = 0; i < N; i++){ m4.setPosition((i-N/2)*span, TOP+0.55+0.525, 0.25); post.setMatrixAt(i, m4); }
   post.castShadow = true; world.add(post);
+  const plate = new THREE.InstancedMesh(new THREE.BoxGeometry(0.16,0.02,0.16), metal, N);
+  for (let i = 0; i < N; i++){ m4.setPosition((i-N/2)*span, TOP+0.56, 0.25); plate.setMatrixAt(i, m4); }
+  world.add(plate);
   const rail = (y, rr) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(rr, rr, 200, 8), metal);
     m.rotation.z = Math.PI/2; m.position.set(0, y, 0.25); m.castShadow = true; world.add(m); };
   rail(TOP+0.55+1.02, 0.03); rail(TOP+0.55+0.62, 0.02); rail(TOP+0.55+0.28, 0.02);
@@ -284,16 +351,24 @@ box(300, 0.4, 80, grassGround, 0, TOP-0.7, 55);
 {
   const parts = [];
   const dirs = [[1,1,1],[1,-1,-1],[-1,1,-1],[-1,-1,1]].map(v => new THREE.Vector3(...v).normalize());
-  dirs.forEach(dv => {
-    const g = new THREE.CylinderGeometry(0.30, 0.42, 1.35, 10, 1);
+  let seed0 = 1.3;
+  dirs.forEach(dv => { seed0 += 1.7;
+    const g = new THREE.CylinderGeometry(0.30, 0.42, 1.35, 14, 4);
+    // 手工澆置的不規則：只依位置做位移（重複頂點位移一致，不會裂開）
+    const pa = g.attributes.position;
+    for (let vi = 0; vi < pa.count; vi++){
+      const x = pa.getX(vi), y = pa.getY(vi), z = pa.getZ(vi);
+      pa.setXYZ(vi, x + 0.04*Math.sin(y*6+z*9+seed0), y + 0.03*Math.sin(x*8+z*7+seed0*2), z + 0.04*Math.sin(x*9-y*5+seed0*3));
+    }
+    g.computeVertexNormals();
     g.translate(0, 0.62, 0);
     const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0), dv);
     g.applyQuaternion(q); parts.push(g);
   });
   const tg = mergeGeometries(parts);
-  const tc = concreteTextures(5, { jointsX: 0, stain: 0.2, w: 512, h: 512 });
+  const tc = concreteTextures(5, { w: 512, h: 512, cols: 0, stain: 0.3, cracks: 2, pores: 260, speck: 1800 });
   tc.map.repeat.set(1,1);
-  const tMat = makeWet(new THREE.MeshStandardMaterial({ map: tc.map, bumpMap: tc.bump, bumpScale: 2, roughness: 0.95, color: 0xcfc9c0 }), { wetTop: 1.1, dryBelow: 0.1 });
+  const tMat = makeWet(new THREE.MeshStandardMaterial({ map: tc.map, bumpMap: tc.bump, bumpScale: 3, roughness: 0.93, color: 0xd6d0c6 }), { wetTop: 1.15, dryBelow: 0.1 });
   const rows = [
     { z: -2.9, y: 0.05, n: 34, dx: 3.1 },
     { z: -5.4, y: -0.25, n: 32, dx: 3.3 },
@@ -337,7 +412,7 @@ const lampBulbs = [];
 
 /* 長椅、繫船柱等小物 */
 {
-  const wood = new THREE.MeshStandardMaterial({ color: 0x6a4a34, roughness: 0.8 });
+  const wood = new THREE.MeshStandardMaterial({ map: woodTexture(), roughness: 0.72 });
   const iron = new THREE.MeshStandardMaterial({ color: 0x25272a, roughness: 0.5, metalness: 0.7 });
   [[-14,2.0],[9,2.0],[26,2.0]].forEach(([x,z]) => {
     const b = new THREE.Group();
@@ -502,12 +577,15 @@ const birdData = Array.from({length: birdCount}, (_, i) => ({ a: i*0.71, r: 30 +
 {
   const bladeG = new THREE.BufferGeometry();
   const pos = [], uv = [], idx = [];
-  for (let b = 0; b < 3; b++){
-    const a = b*Math.PI/3, c = Math.cos(a), s = Math.sin(a), w = 0.028, h = 0.42;
-    const o = pos.length/3;
-    pos.push(-w*c,0,-w*s,  w*c,0,w*s,  0.0*c,h,0.0*s);
-    uv.push(0,0, 1,0, 0.5,1);
-    idx.push(o,o+1,o+2);
+  for (let b = 0; b < 5; b++){
+    const a = b*Math.PI/5*1.03 + 0.2*b, c = Math.cos(a), sn = Math.sin(a), w = 0.024 + 0.008*(b%3), h = 0.30 + 0.16*((b*7)%5)/4, bend = 0.06 + 0.05*(b%3);
+    const o = pos.length/3, segs = 3;
+    for (let k = 0; k <= segs; k++){
+      const t = k/segs, ww = w*(1 - t*0.92), dz = bend*t*t;
+      pos.push(-ww*c + dz*sn, h*t, -ww*sn - dz*c,  ww*c + dz*sn, h*t, ww*sn - dz*c);
+      uv.push(0,t, 1,t);
+    }
+    for (let k = 0; k < segs; k++){ const i0 = o+k*2; idx.push(i0,i0+1,i0+2, i0+1,i0+3,i0+2); }
   }
   bladeG.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
   bladeG.setAttribute('uv', new THREE.Float32BufferAttribute(uv,2));
@@ -599,7 +677,10 @@ const CAMS = [
   { pos: [-9, 4.3, 3.4],   look: [-20, 4.0, -56], fov: 52 },   // A 落日在右三分線，欄杆與矮牆引導視線
   { pos: [4.5, 4.75, 1.0], look: [-2.5, 0.2, -10],  fov: 56 },   // B 探出矮牆俯視消波塊與浪
   { pos: [-26, 4.0, 2.4],  look: [30, 4.3, -3.5],  fov: 58 },   // C 沿堤望去，路燈與欄杆透視
+  { pos: [1.5, 3.5, 1.6],  look: [-2.5, 0.6, -4.5], fov: 55 },   // (除錯) 材質特寫：牆面與消波塊
+  { pos: [-3, 3.5, 4.2],   look: [4, 2.6, 0.8],     fov: 55 },   // (除錯) 材質特寫：步道、矮牆、草
 ];
+if (Q.has('dbg')) scene.add(new THREE.AmbientLight(0xffffff, 1.6));   // 僅供檢視材質細節，不列入評分截圖
 const look = new THREE.Vector3(), mouse = new THREE.Vector2();
 addEventListener('mousemove', e => { mouse.set(e.clientX/innerWidth-0.5, e.clientY/innerHeight-0.5); });
 addEventListener('keydown', e => { const n = parseInt(e.key); if (n >= 1 && n <= 3) camIndex = n-1; });

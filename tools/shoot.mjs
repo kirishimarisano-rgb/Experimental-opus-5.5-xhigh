@@ -18,6 +18,12 @@ await ctx.route('https://cdn.jsdelivr.net/npm/three@*/**', r => {
   fs.existsSync(f) ? r.fulfill({ body: fs.readFileSync(f), contentType: 'text/javascript' }) : r.fulfill({ status: 404 });
 });
 const errs = [];
+if (process.env.DBG) for (const cam of [3, 4]) {
+  const page = await ctx.newPage();
+  await page.goto(`http://localhost:${port}/?t=14&cam=${cam}&dbg=1`);
+  await page.waitForFunction('window.__ready === true', null, { timeout: 180000 });
+  await page.screenshot({ path: path.join(out, `dbg${cam}.png`) }); await page.close();
+}
 for (const cam of [0, 1, 2]) {
   const page = await ctx.newPage();
   page.on('console', m => { if (['error', 'warning'].includes(m.type())) errs.push(`[cam${cam}] ${m.text()}`); });
