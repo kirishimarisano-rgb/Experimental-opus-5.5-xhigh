@@ -788,6 +788,28 @@ const boats = [];
   spray = new THREE.Points(g, sm); spray.frustumCulled = false; scene.add(spray);
 }
 
+/* 近處漁船：緩慢橫移並拖出尾波 */
+let nearBoat;
+{
+  nearBoat = new THREE.Group();
+  const hullM = new THREE.MeshStandardMaterial({ color: 0x1b1a20, roughness: 0.7 }), whiteM = new THREE.MeshStandardMaterial({ color: 0xd8d0c4, roughness: 0.6 });
+  const hull = new THREE.Mesh(new THREE.BoxGeometry(9, 1.3, 2.6), hullM); hull.position.y = 0.4; hull.castShadow = true;
+  const bow = new THREE.Mesh(new THREE.ConeGeometry(1.3, 2.4, 4), hullM); bow.rotation.z = -Math.PI/2; bow.rotation.x = Math.PI/4; bow.position.set(5.6, 0.4, 0);
+  const cab = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.8, 1.9), whiteM); cab.position.set(-1.6, 1.9, 0); cab.castShadow = true;
+  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,4,5), hullM); mast.position.set(0.8, 3.3, 0);
+  const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 6), new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB(6,3.5,1.4) })); lamp.position.set(0.8, 5.4, 0);
+  const wake = new THREE.Mesh(new THREE.PlaneGeometry(40, 7), new THREE.ShaderMaterial({ uniforms, transparent: true, depthWrite: false,
+    vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+    fragmentShader: GLSL_COMMON + `varying vec2 vUv; void main(){
+      float x = 1.0 - vUv.x, y = abs(vUv.y-0.5)*2.0;   // vUv.x=1 在船尾端（模型 +x 為船頭，尾波往 -x）
+      float v = smoothstep(x*0.9+0.05, x*0.9-0.25, y) * (1.0-smoothstep(0.0,1.0,1.0-vUv.x)) ;
+      float n = fbm3(vec2(vUv.x*24.0 - uTime*0.8, vUv.y*8.0));
+      float a = v * smoothstep(0.3,0.75,n) * (1.0 - x) * 0.9;
+      gl_FragColor = vec4(vec3(1.4,1.05,0.8), a); }` }));
+  wake.rotation.x = -Math.PI/2; wake.position.set(-24.5, 0.12, 0); wake.renderOrder = 2;
+  nearBoat.add(hull, bow, cab, mast, lamp, wake); scene.add(nearBoat);
+}
+
 /* ------------------------------------------------------------------ birds */
 const birdCount = 13;
 const birdMat = new THREE.ShaderMaterial({
@@ -921,6 +943,13 @@ const birdData = Array.from({length: birdCount}, (_, i) => i < 6
     return mergeGeometries(parts);
   };
   const mat = new THREE.MeshStandardMaterial({ map: needleTex, vertexColors: true, roughness: 1, alphaTest: 0.45, side: THREE.DoubleSide });
+  mat.onBeforeCompile = (sh) => {   // 風吹樹冠：越高擺幅越大，每棵相位不同
+    sh.uniforms.uTime = uniforms.uTime;
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float uTime;')
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        { float h = clamp(position.y/9.0, 0.0, 1.0); vec4 io = instanceMatrix*vec4(0.,0.,0.,1.);
+          float ph = io.x*0.31; transformed.x += (sin(uTime*1.15+ph)*0.6 + sin(uTime*2.7+ph*2.0)*0.25)*0.16*h*h; transformed.z += sin(uTime*0.9+ph+1.7)*0.08*h*h; }`);
+  };
   const geos = [makeTree(3), makeTree(7), makeTree(12)];
   const per = 18, ims = geos.map(g => { const m = new THREE.InstancedMesh(g, mat, per); m.receiveShadow = true; world.add(m); return m; });
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), p = new THREE.Vector3(), sc = new THREE.Vector3();
@@ -997,7 +1026,7 @@ addEventListener('resize', resize); resize();
 const tmp = new THREE.Matrix4(), tq = new THREE.Quaternion(), te = new THREE.Euler(), tp = new THREE.Vector3(), ts = new THREE.Vector3(1,1,1);
 function update(t){
   uniforms.uTime.value = t;
-  water.position.y = 0.13*Math.sin(t*0.9) + 0.05*Math.sin(t*1.7+1.0);   // 潮汐湧動：水線在消波塊上起伏
+  water.position.y = 0.2*Math.sin(t*0.9) + 0.07*Math.sin(t*1.7+1.0);   // 潮汐湧動：水線在消波塊上起伏
   finalPass.uniforms.uTime.value = t;
   if (foamCollars) foamCollars.position.y = water.position.y + 0.06;
   updateCamera(t);
@@ -1009,6 +1038,8 @@ function update(t){
     cycWheels.forEach(w => w.rotation.z = -x/0.33);
     cycLegs.forEach((l, i) => { l.rotation.z = Math.sin(t*6.0 + i*Math.PI)*0.55; });
   }
+  // 近處漁船由右向左緩行
+  { const bx = 130 - ((t*1.6 + 97.6) % 360); nearBoat.position.set(bx, 0.15 + Math.sin(t*0.8)*0.12, -105); nearBoat.rotation.y = Math.PI; nearBoat.rotation.z = Math.sin(t*0.7)*0.025; }
   // 釣客：竿尖輕點、身體微晃
   fisherRod.rotation.z = fisherRodBase + Math.sin(t*1.9)*0.012 + Math.sin(t*0.7)*0.02; fisherG.rotation.z = Math.sin(t*0.6)*0.012;
   // 遠岸燈火閃爍、船燈明滅
